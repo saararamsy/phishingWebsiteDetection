@@ -1,0 +1,1501 @@
+---
+title: "FIT3152-Assignment02"
+output:
+  pdf_document: default
+  html_document: default
+date: "2024-05-02"
+---
+
+                         #FIT3152-Assignment02
+                         #Name: Fathima Saara Mohamed Ramsy
+                         #Student ID:32757751
+      
+# Setting up the environment
+
+
+```{r}
+#Clean up the environment
+rm(list = ls())
+```
+
+**Loading the required packages**
+
+```{r}
+#Loading the required packages
+
+# Data manipulation and visualization
+library(ggplot2)       # For creating visualizations
+library(tidyr)         # For data tidying
+library(dplyr)         # For data manipulation
+library(tidyverse)     # For data manipulation and visualization
+
+# Machine learning models
+library(tree)          # For decision tree
+library(e1071)         # For Naive Bayes
+library(adabag)        # For Bagging
+library(rpart)         # For decision tree (part of caret)
+library(randomForest)  # For Random Forest
+library(neuralnet)     # For Artificial Neural Network
+library(caret)         # For general machine learning modeling (including boosting)
+library(rsample)       # For data splitting
+library(pROC)          # For ROC curve analysis
+library(lightgbm)      # For LightGBM classifier
+
+# Others
+library(ROCR)          # For ROC curve analysis
+library(RhpcBLASctl)   # For controlling BLAS
+
+
+```
+Package Name: RhpcBLASctl
+
+Description:
+RhpcBLASctl is an R package designed to control the Basic Linear Algebra Subprograms (BLAS) library configuration in R. BLAS is a fundamental library for performing various linear algebra operations efficiently, such as matrix multiplication and vector operations. This package provides functions to manage the BLAS library configuration, including selecting different BLAS implementations and controlling the number of threads used for parallel processing.This is needed in the Question 12, to control the configuration of the Basic Linear Algebra Subprograms (BLAS) library used by LightGBM for efficient matrix computations. LightGBM heavily relies on matrix operations for training its gradient boosting model. By default, R uses the BLAS library for these operations. However, depending on your system configuration, the default BLAS implementation may not be optimized for performance, especially when dealing with large datasets.
+
+
+
+```{r}
+#setting the directory
+setwd("/Users/saararamzy/Desktop/FIT3152")
+
+# Load the target dataset into the memory.
+Phish <- read.csv("PhishingData.csv")
+```
+
+We will sample a subset of the dataset for exploration and analysis with my student id as the seed.
+
+```{r}
+set.seed(32757751)
+L <- as.data.frame(c(1:50))
+L <- L[sample(nrow(L), 10, replace = FALSE),]
+Phish <- Phish[(Phish$A01 %in% L),]
+PD <- Phish[sample(nrow(Phish), 2000, replace = FALSE),]
+
+nrow(PD)
+
+```
+We have selected a subset of the dataset consisting of 2,000 observations.
+
+
+#1.Exploration of the data
+
+In this section, we will analyze the structure of the dataset.
+```{r}
+str(PD)
+```
+The PD dataset is a data frame containing 2,000 observations across 26 variables related to website attributes, used to classify websites as either legitimate or phishing. The dataset includes both integer and numerical variables, with some like A02 to A11 predominantly containing zeros, suggesting they might be binary or have limited variability. Notably, the Class variable is an integer indicating the website's classification (0 for legitimate and 1 for phishing), which is the target for predictive modeling. Several variables show missing values, particularly A21, and attributes like A18, A22, A23, A24, and A25 display a wide range of values, which could influence model sensitivity and might require preprocessing steps such as normalization, outlier treatment, or removal based on their distribution and relevance. From the output, it seems that some variables such as A09, A10, A11 (mostly zeros), and A25 (continuous but zeros) may have little variation and might not contribute significantly to the model. These variables might be candidates for omission from further analysis unless they provide specific insights into phishing behaviors. This dataset will require careful handling of missing data and possibly feature selection to optimize for an effective classification model.
+
+**Analyzing the proportion of phishing versus legitimate sites**
+
+To determine the proportion of phishing sites to legitimate sites within the PD dataset, we will calculate the frequency of each class within the Class variable, which categorizes websites as either legitimate (0) or phishing (1). The proportion can be calculated by dividing the number of occurrences of each class by the total number of observations in the dataset.
+
+
+```{r}
+# Counting the instances of each class
+class_distribution <- table(PD$Class)
+
+# Calculating the total number of instances
+total_counts <- sum(class_distribution)
+
+# Calculating the proportion of each class
+class_proportions <- class_distribution / total_counts
+
+# Outputting the proportions
+class_proportions
+
+```
+
+
+The output indicates that in the PD dataset, approximately 55.95% of the websites are classified as legitimate (represented by 0), and 44.05% are classified as phishing sites (represented by 1). This near-balanced distribution suggests a relatively equitable dataset in terms of class representation, which is beneficial for building classification models.
+
+A balanced dataset helps in training more robust and unbiased models, as each class is fairly represented during the model learning phase. However, even with this balance, it is essential to perform further analysis on the data to ensure that the models trained do not inherently favor one class over another, which could happen due to underlying patterns or features that are more predictive for one class. Given this distribution, it is also prudent to consider evaluation metrics that account for both class proportions effectively, such as precision, recall, F1-score, and AUC-ROC, alongside accuracy during the model assessment phase.
+
+
+
+To obtain descriptions of the predictor (independent) variables, including measures like mean and standard deviation for real-valued attributes in our dataset in R, we can use the summary() function for a quick overview and the sapply() function to calculate specific statistics for each of the variables.
+
+
+
+**Proportion of missing values(NA)**
+
+
+** Finding the top 5 columns with the highest proportion of missing values.**
+
+```{r}
+# Calculate the proportion of NA values in each column
+na_props_base <- sapply(PD, function(x) mean(is.na(x)))
+
+# Create a data frame from the results
+na_props_df <- data.frame(column = names(na_props_base), na_prop = na_props_base)
+
+# Order the data frame by the proportion of NA values in descending order
+na_props_df <- na_props_df[order(-na_props_df$na_prop), ]
+
+# Select the top 5 columns with the highest proportion of missing values
+top_na_props <- head(na_props_df, 5)
+
+# Print the result
+print(top_na_props)
+
+```
+We observe that the columns A05, A12, A25, A10, and A13 in our dataset contain a noticeable proportion of missing data, with each exceeding 1%. A potential strategy to address this during the data pre-processing phase is to consider either removing these columns entirely or applying appropriate imputation methods for the missing values. However, indiscriminate removal of columns or imputation might introduce noise or bias in the data, potentially leading to an oversimplified or skewed decision tree model. Thus, we will explore different strategies in our data pre-processing section to handle these missing values effectively, ensuring the integrity and utility of our predictive model remain intact.
+
+
+**Calculating the percentage of rows that have at least one missing value.**
+
+```{r}
+# Calculate the proportion of rows that contain at least one missing value in the dataset
+missing_data_proportion <- sum(apply(is.na(PD), 1, any)) / nrow(PD)
+missing_data_proportion
+```
+
+The output reveals that approximately 20.35% of the rows in the dataset contain at least one missing value. This significant proportion of incomplete records highlights the importance of addressing missing data during the preprocessing phase of our analysis. To ensure robust model performance and valid inference, it's crucial to carefully consider strategies for handling these missing values. Possible approaches include imputation, where missing values are replaced based on other data points, or exclusion, where rows with missing data are omitted from the dataset. The choice of method may depend on the nature of the missing data and the potential impact on the analysis results.
+
+
+**Calculating the coefficient of variation**
+
+We will be calculating the coefficient of variation (CV) for each numeric attribute to assess data variability relative to the mean. This statistical measure, which is the ratio of the standard deviation to the mean, is especially useful for comparing variability across data attributes that may have different units or scales. By normalizing variability, the CV provides a clear, dimensionless indicator of relative dispersion, making it easier to identify which features exhibit the most intrinsic variability. This insight is crucial for determining which variables might introduce significant uncertainty into predictive models and may influence decisions regarding data normalization, transformation, or exclusion in pre-processing steps.
+
+```{r}
+
+
+# Calculate the coefficient of variation for each numeric column in PD
+cvs <- PD %>%
+  summarise(across(where(is.numeric), ~ sd(., na.rm = TRUE) / mean(., na.rm = TRUE, na.action = na.pass) )) %>%
+  pivot_longer(cols = everything(), names_to = "column", values_to = "cv")
+
+# Select the top 5 columns with the highest CV
+top_cvs <- cvs %>%
+  filter(!is.nan(cv)) %>%
+  arrange(desc(cv)) %>%
+  slice_head(n = 5)
+
+print(top_cvs)
+
+```
+
+The output identifies the top five columns from the dataset based on their coefficient of variation (CV), which measures the relative variability of each variable compared to its mean. The attributes A05, A13, A25, A07, and A11 are highlighted as having the highest CV values, indicating substantial variability. A05 leads with a CV of approximately 23.39, suggesting extreme variability or a wide distribution of data points. This is followed closely by A13 and A25, with CVs of 20.57 and 18.70 respectively, and A07 at 18.16. A11 also shows significant variation with a CV of 9.32. These high levels of variability can influence predictive modeling, as features with large variations might disproportionately affect the performance of certain algorithms unless appropriately normalized or transformed during the data preprocessing phase.
+
+
+**Visualisation of data distibution **
+```{r}
+
+
+# Enlarge the plot.
+options(repr.plot.width = 10, repr.plot.height = 10)
+
+# Transform the data into long format for only numeric columns
+PD_long <- PD %>%
+  select_if(is.numeric) %>%
+  gather(key = "column", value = "value", na.rm = TRUE)
+
+# Create a boxplot from the long format data
+ggplot(PD_long, aes(x = column, y = value)) +
+  geom_boxplot() +
+  facet_wrap(~ column, scales = "free", ncol = 10) + # Adjust 'ncol' as needed to fit the number of variables
+  theme_bw() +
+  theme(plot.title = element_text(size = 20),
+        axis.text.x = element_blank(),
+        axis.title.x = element_blank(),
+        axis.title.y = element_blank()) +
+  labs(title = "Data Distribution of Numerical Attributes")
+
+```
+The boxplot visualization for the dataset efficiently illustrates the distribution characteristics of each numerical attribute, from A01 to A25, alongside the 'Class' attribute. These plots are instrumental in assessing the median, interquartile ranges, and the presence of outliers, providing insights into the data's variability and concentration. For example, attributes such as A18 display a significant range and numerous outliers, indicating a high degree of variability. In contrast, attributes like A05, A06, and A07 show a pronounced concentration of values near the lower end with minimal outliers, reflecting lower variability. The clear segregation of the 'Class' attribute highlights its binary nature, essential for understanding the dataset's structure in binary classification tasks. Overall, these boxplots are crucial for pinpointing which attributes may require further attention during preprocessing, such as handling outliers or transforming data to mitigate skewness.
+
+
+
+The output we received after calculating the coefficient of variation (CV) for each numeric column and selecting the top five with the highest CV values shows that columns A05, A13, A25, A07, and A11 have the highest variations. This result might differ from expectations if A18, which showed considerable variability in the boxplots, is not listed. The possible reason for A18 not appearing among the top five could be that its relative variability (standard deviation divided by mean) isn't as high as the others when calculated in this manner, despite its large range and outliers. This emphasizes how CV prioritizes relative spread rather than absolute spread, which can shift focus from attributes with large ranges but higher means to those with smaller means but disproportionate spreads.
+
+**Textual representation of the data distribution**
+```{r}
+summary(PD)
+```
+The summary of the dataset reveals various key points: numerous variables have a restricted range indicating potential categorical or ordinal nature, while others like A18 display substantial variation, which may necessitate normalization. A significant proportion of attributes are dominated by zeros or have minimal variance, potentially diminishing their predictive power. Almost every attribute contains missing values, with some like A25 and A12 exhibiting notably high counts, requiring careful imputation strategies. Outliers and skewness in variables such as A18 and A23 suggest that outlier treatment or data transformation could be beneficial. Attributes that appear binary, like A15 and A19, may need specific encoding when used in machine learning models. Considering these factors, attributes with excessive missing data, low variance, or extreme skewness might be candidates for exclusion to enhance the dataset's overall utility for predictive modeling.
+
+**Is there anything noteworthy in the data?**
+Several noteworthy aspects are evident in the data from your analysis. First, the dataset has a significant proportion of missing values in certain columns, such as A25, A12, and A10, which may affect the robustness of any predictive models developed. Additionally, the variables A03, A10, and A11 demonstrate minimal variance as they predominantly contain zeros, suggesting they might not be very informative for distinguishing between classes. Moreover, some attributes like A18 and A23 exhibit extreme outlier values which could distort the predictive model's outcomes if not appropriately managed. Also, the distribution of the Class variable shows a nearly balanced dataset, with around 44% of the entries representing phishing sites, which is beneficial for developing a classification model without a severe class imbalance. These characteristics must be considered during the preprocessing and modeling phases to ensure accurate and reliable results.
+
+
+**Are there any attributes you need to consider omitting from your analysis?**
+Based on the dataset summary, there are several attributes that may need to be considered for omission from our analysis. Attributes like A25, A12, and others with a high proportion of missing values might require omission unless an effective imputation strategy can be employed. Attributes such as A03, A10, and A11 show minimal variance, mostly recording zeros, and might not contribute meaningfully to predictive modeling. Variables like A18 and A23, which display extreme values or outliers, might skew the model's results and could be considered for omission if these values cannot be normalized or justified. Furthermore, any highly correlated variables that introduce redundancy should be assessed for omission to avoid multicollinearity. Lastly, attributes that show no significant relationship with the target variable upon further exploratory analysis should also be considered for removal to simplify the model and potentially improve its performance, always considering the statistical implications and domain knowledge about the data.
+
+
+# 2.Preprocession of data
+
+In the dataset, the Class attribute should definitely be converted to a factor as it categorically distinguishes between phishing (1) and legitimate (0) websites, which is crucial for the classification models. Additionally, attributes with a small number of unique integer values, such as A02, A03, A05, A06, A07, A09, A10, A11, A13, A14, A15, A16, A19, A20, and A21 may represent categorical data encoded as integers, suggesting they are suitable candidates for conversion to factors. Attributes like A01, A04, A12, A17, A18, and A23, despite having more unique values, could also be considered categorical if they denote specific groups or classes within their numerical range. To confirm whether an attribute is categorical,we have to review its unique values and any contextual information available about the data. For attributes with extensive unique values or those representing continuous data, retaining them as numeric would be more appropriate.
+
+
+**Checking number of unique values for all attributes**
+```{r}
+for (col in names(PD)) {
+  cat("Number of unique values in", col, ":", length(unique(PD[[col]])), "\n")
+}
+```
+ Attributes like A03, A04, A05, A06, A07, A09, A10, A13, A14, A15, A16, A19, A20, A21, and notably the Class attribute (with 2 unique values) are prime candidates for conversion because they represent distinct categories, essential for the classification models. On the other hand, attributes with a moderate number of unique values such as A01, A02, A11, A17, and A25 could also be considered for conversion based on the context they represent, possibly denoting specific groups or classifications. Conversely, attributes like A08, A12, A18, A22, A23, and A24, which possess a large number of unique values, are likely best kept as numeric since they are probable continuous measurements. However, depending on the domain knowledge and specific meanings tied to these attributes, there might be cases where conversion to factor is justified if each unique value distinctively classifies a category, underscoring the importance of aligning data preprocessing strategies with the analytical objectives and data insights.
+ 
+
+When deciding which attributes to convert to factors in a dataset, it's important to consider the nature of the data each attribute represents. For attributes with three or fewer unique values, converting them to factors can be particularly justifiable when these values represent distinct categories or classes rather than measurements or quantities.
+
+In the context of this dataset, attributes with three or fewer unique values likely represent binary or ternary conditions, typically encoded as 0 or 1, with the possible inclusion of NA representing missing data. This pattern is common in data where each attribute indicates the presence or absence of a certain feature, condition, or classification, making them categorical by nature.
+
+**Displaying columns with three or fewer unique values **
+
+```{r}
+# Calculate the number of unique values for each column in the dataset
+unique_counts <- sapply(PD, function(x) length(unique(x)))
+
+# Filter columns that have 3 or fewer unique values
+filtered_columns <- names(unique_counts[unique_counts <= 3 ])
+
+# Display the unique values for these filtered columns
+filtered_values <- sapply(PD[filtered_columns], unique)
+print(filtered_values)
+
+```
+
+
+
+**Converting categorical values into factors**
+By converting these attributes to factors, we ensure that our analytical methods appropriately respect the categorical nature of the data, leading to more accurate and meaningful results. This approach is standard practice in data preprocessing, particularly when preparing data for classification tasks in machine learning and statistical modeling.
+
+```{r}
+
+cols_to_convert <- c("A03", "A06", "A07", "A09", "A10", "A14", "A15", "A16", "A19", "A20","A21", "Class")
+#cols_to_convert <- c( "Class")
+
+#Convert specific columns to factors
+PD[cols_to_convert] <- lapply(PD[cols_to_convert], as.factor)
+
+```
+
+**Generating a subset without missing values**
+
+Given that many classification models in R are not equipped to handle missing data directly and may interpret such instances inaccurately or even result in errors, it is prudent to prepare a subset of the dataset where missing values are omitted. For the 'Phish' dataset, specifically, the approach will be to create a filtered subset that excludes any rows containing missing values. 
+
+```{r}
+PD_clean <- PD %>% drop_na()
+```
+
+The primary challenge with this approach is the potential reduction in dataset size, which could limit the diversity of examples available for training the models. However, this is a necessary compromise to ensure the quality and reliability of the training process, aiming to create models that can accurately generalize and make predictions on new, unseen data. This method ensures that the training set used will provide the most robust and reliable foundation for model fitting, thus enhancing the predictive performance of the models developed.
+
+```{r}
+nrow(PD)
+nrow(PD_clean)
+```
+
+The reduction in the number of rows from 2000 to 1593 after filtering out missing values from the PD dataset highlights a significant loss of data, approximately 20%. While such a substantial decrease could potentially impact the model's capacity for learning and generalization, this might not be a significant concern in our specific scenario. Given that the primary goal is to utilize this cleaned dataset for model training, the focus is on ensuring the quality and completeness of the data used for analysis. Theoretically, the model trained on this cleaner, albeit smaller, dataset should still be able to generalize and make predictions effectively for unseen data.
+
+In this context, the decision to proceed with the data that remains after filtering out missing values assumes that the remaining data is still representative of the broader dataset and sufficient to capture the underlying patterns necessary for robust model training. This approach prioritizes data quality over quantity, banking on the assumption that a cleaner dataset will lead to more reliable predictive performance, even if it means working with fewer observations. However, it's essential to continuously evaluate this trade-off, especially if subsequent model diagnostics suggest underperformance or overfitting, which could be mitigated by more sophisticated missing data treatments such as imputation techniques.
+
+
+**Summary of the cleaned dataset**
+```{r}
+summary(PD_clean)
+```
+
+After completing all necessary preprocessing steps, the dataset is now ready for model training and evaluation.
+
+# 3.Application of Train-Test Split
+```{r}
+
+# Split data into training and testing sets
+SEED <-32757751
+set.seed(SEED) 
+train_index <- sample(1:nrow(PD_clean), 0.7 * nrow(PD_clean))
+train_data <- PD_clean[train_index, ]
+test_data <- PD_clean[-train_index, ]
+```
+
+
+# 4.Implementation of the Classfication Models
+
+In this task, the objective is to apply various classification models to a dataset, utilizing R programming to predict outcomes based on provided attributes. Each model represents a distinct approach to classification, leveraging unique methodologies to understand and categorize data. The models chosen for implementation include:
+
+*Decision Tree*: A graphical representation that uses branching methods to illustrate every possible outcome of a decision, which helps in making predictions by learning decision rules from features.
+*Naïve Bayes*: A simple probabilistic classifier based on applying Bayes' theorem with strong (naive) independence assumptions between the features.
+*Bagging*: Short for Bootstrap Aggregating, this technique improves the stability and accuracy of machine learning algorithms by combining multiple models that vote on the final output.
+*Boosting*: This is an ensemble technique that primarily focuses on converting weak learners to strong ones through iterative focus on the errors of previous predictions.
+*Random Forest*: An extension of bagged decision trees, this model consists of a large number of individual decision trees that operate as an ensemble. Each tree in the random forest spits out a class prediction and the class with the most votes becomes the model’s prediction.
+
+The analysis will involve fitting each model to the training data, followed by evaluation based on its ability to accurately classify new, unseen data. This approach will enable the assessment of each model's effectiveness in terms of prediction accuracy, robustness, and overfitting. Using these models under their default settings provides a baseline understanding of their capabilities within this specific predictive context.
+
+
+**Decision Tree**
+
+Now, we are going to construct a Decision Tree model, which aims to classify the variable Class into two categories: 0 or 1. This method will involve analyzing the patterns and relationships between different website attributes to predict whether a site is legitimate or designed for phishing. The tree will learn from the training data by creating rules that segment the data at each node, leading to a decision on the classification of each case based on these learned patterns. This approach not only helps in prediction but also provides visual insights into the decision-making process, making it easier to understand how the outcomes are derived from the input variables.
+```{r}
+
+set.seed(SEED)
+fitted_tree <- tree(Class~ ., data = train_data)
+plot(fitted_tree)
+text(fitted_tree)
+summary(fitted_tree)
+
+```
+
+The summary of the classification tree from the PD_clean dataset highlights the use of five variables (A18, A01, A04, A23, and A22) as significant predictors for determining if a website is phishing or legitimate. The tree comprises seven terminal nodes, indicating a moderate complexity which helps in capturing the underlying patterns of the data. However, the residual mean deviance is 1.106 (1225 / 1108), suggesting the fit could potentially be improved, and a misclassification error rate of 27.26% points to a significant number of inaccuracies in prediction. This error rate suggests that the model, while effective to a degree, may benefit from adjustments or exploring alternative algorithms to reduce prediction errors and enhance generalizability. Visualizing the tree provides further insights into the decision-making process, revealing how different features contribute to the classification outcomes. To potentially improve model performance, exploring other classification techniques or adjusting the tree parameters could be considered, alongside a thorough validation using the unseen test data to ensure the model's effectiveness in real-world scenarios.
+
+The decision tree visualized here showcases the steps and criteria used to classify websites as either phishing or legitimate based on the training data. It starts with the most significant split at attribute A18, where values less than or equal to 12.5 lead directly to a classification of '0', indicating legitimate sites. If A18 is greater than 12.5, the tree then evaluates A01, with further splits at values 34.5 and 16.5, all leading to the same classification '0'. Another branch examines A23, and if A23 is less than or equal to 1.5, the model again predicts '0'. A critical branch looks at A22, where if it's less than approximately 0.04587, it predicts '0'; otherwise, it predicts '1', suggesting the site is phishing. This tree structure helps to understand how different features contribute to the prediction and indicates the thresholds that significantly impact the classification decision.
+
+
+
+
+**Naïve Bayes**
+Next, we will implement a Naïve Bayes classifier, which is based on applying Bayes' theorem with the assumption of independence between predictors. This model is particularly suited for classification tasks where the attributes are considered independent of each other given the class. In our case, it will classify the `Class` attribute into two categories: 0 for legitimate sites and 1 for phishing sites. Naïve Bayes is known for its simplicity and efficiency, especially in dealing with large datasets. It calculates the probability of each category and classifies each case by assigning it to the category with the highest probability. This approach is effective in scenarios where predictors are conditionally independent, making it a valuable tool for our analysis.
+
+```{r}
+
+
+set.seed(SEED)
+fitted_bayes <- naiveBayes(Class ~ ., data = train_data)
+summary(fitted_bayes)
+```
+The summary output of the naiveBayes model provides a concise overview of its internal structure and the mechanics used for prediction. It lists the prior probabilities of the target classes under 'apriori', indicating the baseline likelihood of each class based on the training data. The 'tables' section, with 25 entries, contains conditional probability tables for each predictor, essential for evaluating the likelihood of predictor values given class labels. The 'levels' detail specifies that there are two distinct class labels in the target variable, which are probably 'legitimate' and 'phishing'. The 'isnumeric' field denotes whether each predictor is treated as numeric in the analysis, influencing how the algorithm handles data calculations. Lastly, the 'call' entry documents the exact function call used to train the model, ensuring reproducibility and clarity in methodology. This summary underscores the model's readiness to classify new data based on learned probabilities.
+
+**Bagging**
+
+Following the Naïve Bayes model, we will explore the Bagging (Bootstrap Aggregating) technique. Bagging is an ensemble learning method aimed at improving the stability and accuracy of machine learning algorithms. It involves creating multiple versions of a predictor and using these to get an aggregated predictor. In our context, we'll apply bagging to decision trees, where multiple decision trees are constructed on varied samples of the training dataset. Each tree votes, and the most common output for each input sample is selected as the final output. This method is particularly effective in reducing variance and avoiding overfitting, which makes it ideal for our dataset where the Class attribute is to be classified into either 0 or 1, representing legitimate and phishing sites, respectively. Bagging thus leverages the strength of multiple models to create a robust classifier.
+```{r}
+
+
+# Set the random seed for reproducibility
+set.seed(SEED)
+
+# Fit the bagging model
+fitted_bag <- bagging(Class ~ ., data = as.data.frame(train_data), mfinal = 10)
+
+# Get the summary of the bagging model
+summary(fitted_bag)
+
+```
+The summary of the bagging model provides a detailed breakdown of the model's components and predictions. The model, constructed with the formula Class ~ ., predicts the class variable based on all other predictors in the dataset and comprises 10 decision trees. The votes vector, containing 2230 elements, details the number of votes each instance received from the trees, while the prob vector, of the same length, reflects the probabilities associated with each class per instance. The class vector lists the predicted classes for each data point, determined by majority votes. The model utilized a total of 11,150 samples, indicative of repeated sampling across the 10 trees to ensure robustness. The importance vector, with 25 entries, quantifies the significance of each feature within the model, highlighting those variables that most influence predictions. The terms object relates to the model formula, helping in understanding the variables involved, and the call provides the exact function call used for model fitting. This structured output is crucial for evaluating the model's performance and understanding the influence of different predictors in classification.
+
+
+**Boosting**
+
+Next, we will implement the Boosting method, another ensemble technique designed to enhance the performance of classification models. Boosting focuses on converting a set of weak learners into a strong one by building a sequential series of models; each model attempts to correct the errors of its predecessors. Specifically, we will utilize the AdaBoost algorithm, which adjusts the weights of incorrectly classified instances so that subsequent classifiers focus more on difficult cases. This approach is well-suited for our task, where we aim to classify the Class attribute effectively into categories 0 (legitimate) and 1 (phishing). Boosting is particularly advantageous for reducing bias and variance, making it highly effective for our dataset that may contain intricate patterns not easily captured by a single model.
+
+```{r}
+
+
+
+# Set the seed for reproducibility
+set.seed(SEED)
+
+
+# Convert the data to a data frame
+train_data <- as.data.frame(train_data)
+
+# Fit the boosting model using adabag's boosting function
+fitted_boost <- boosting(Class ~ ., data = train_data, mfinal = 10)
+
+# Summarize the fitted model
+summary(fitted_boost)
+
+```
+The summary of the boosting model, implemented using adabag's boosting function with 10 iterations (mfinal = 10), presents a comprehensive view of the model's architecture and its prediction dynamics. It utilizes the formula Class ~ ., which means it predicts the 'Class' based on all other predictors in the dataset. The model is built from 10 decision trees (as indicated by the trees object), with corresponding weights reflecting the importance of each tree in the ensemble. The votes array contains the tally of votes each instance received across the trees, while the prob array lists the probabilities associated with the predictions for each instance, helping to determine the final class predictions stored in the class vector. The importance vector quantifies the influence of each predictor within the model, highlighting key variables that drive the predictions. The terms object connects back to the model formula, and the call records the function call used to fit the model, ensuring transparency and reproducibility of the model setup. This structured summary is essential for evaluating the model's effectiveness and understanding how different predictors contribute to the outcome.
+
+
+
+
+
+**Random Forest**
+Lastly, we will explore the Random Forest classifier, an ensemble learning method that operates by constructing a multitude of decision trees during training and outputting the class that is the mode of the classes of the individual trees. Random Forest is particularly effective for classification tasks like ours because it handles overfitting better than single decision trees and is less sensitive to outliers in the dataset. By creating multiple trees and using the average of their predictions, Random Forest provides a robust and accurate classification system, making it ideal for distinguishing between legitimate and phishing websites based on the various attributes in our dataset. This method is expected to perform well in terms of accuracy and generalizability due to its ensemble nature.
+```{r}
+
+set.seed(SEED)
+fitted_forest <- randomForest(Class ~ ., data = train_data) 
+summary(fitted_forest)
+```
+The summary of the Random Forest model, provides a comprehensive overview of the model's structure and performance on the training data. It includes the original function call (call), indicating how the model was fit, and a breakdown of the model's type (type), usually specified for classification purposes. The summary details the predictions (predicted) made by the model, alongside an error rate (err.rate) that reflects the model's accuracy during training, typically calculated using out-of-bag (OOB) samples for an unbiased estimate. The confusion matrix offers a precise representation of the model's predictive accuracy by showing the number of correct and incorrect predictions. Additionally, the model's votes matrix shows the voting outcome for each class per instance, contributing to final predictions. The summary also lists the frequency of each instance being left out of bag (oob.times), the classes involved (classes), and the importance of each predictor (importance) in improving the model's predictive accuracy. Parameters like the number of trees (ntree) and the number of variables tried at each split (mtry) are also provided, although details like importance standard deviations, local importance, proximity measures, and in-bag samples are not displayed, indicating they were not calculated or are not applicable in this model configuration. This detailed summary aids in understanding the operational mechanics and effectiveness of the Random Forest in classifying the training dataset.
+
+
+# 5.Model Evaluation and Performance Analysis: Confusion Matrix
+
+To evaluate the performance of our classification models, we will classify the test cases in our dataset as 'phishing (1)' or 'legitimate (0)' using the models we've trained. For each model—Decision Tree, Naïve Bayes, Bagging, Boosting, and Random Forest—we will predict the classes on the test data. Following this, we will generate a confusion matrix for each model to assess its classification accuracy. The confusion matrix is a useful tool for understanding the performance of a classification model, as it shows the true positives, true negatives, false positives, and false negatives. We will also calculate the accuracy of each model, which is the proportion of true results (both true positives and true negatives) among the total number of cases examined. This step is crucial for determining which model performs best at correctly identifying phishing and legitimate websites.
+
+To further evaluate the performance of our classification models, we will add precision and recall metrics along with accuracy. Precision measures the accuracy of positive predictions made by the model, calculated as the ratio of true positives to the sum of true and false positives. Recall, or sensitivity, measures the ability of the model to find all the relevant cases within the data, calculated as the ratio of true positives to the sum of true positives and false negatives. These metrics will provide a deeper insight into the effectiveness of each model, especially in contexts where the costs of false positives and false negatives are different.
+
+**Decision Tree**
+```{r}
+# Predicting with the Decision Tree model
+predictions_tree <- predict(fitted_tree, test_data, type = "class")
+
+# Generating confusion matrix
+conf_matrix_tree <- table(Predicted = predictions_tree, Actual = test_data$Class)
+
+# Calculating precision, recall, and accuracy
+precision_tree <- conf_matrix_tree[2, 2] / sum(conf_matrix_tree[2, ])
+recall_tree <- conf_matrix_tree[2, 2] / sum(conf_matrix_tree[, 2])
+accuracy_tree <- sum(diag(conf_matrix_tree)) / sum(conf_matrix_tree)
+
+cat("precision: ", precision_tree, "\n")
+
+# Print the metrics
+cat("Confusion Matrix for Decision Tree:\n")
+print(conf_matrix_tree)
+cat(sprintf("Precision of Decision Tree: %.2f\n", precision_tree))
+cat(sprintf("Recall of Decision Tree: %.2f\n", recall_tree))
+cat(sprintf("Accuracy of Decision Tree: %.2f\n", accuracy_tree))
+
+```
+The confusion matrix for the Decision Tree model highlights its performance on the test dataset, where it correctly predicted 226 legitimate sites and 111 phishing sites,resulting in a precision of 0.79. The model achieves a precision of 0.79, indicating a high level of accuracy when it predicts a website as phishing, with 79% of these predictions being correct. However, its recall is notably lower at 0.50, suggesting that it only correctly identifies half of all actual phishing attempts, which might be a critical shortfall in scenarios where missing a phishing attempt can lead to significant security breaches. The overall accuracy of the model stands at 71%, reflecting a moderate effectiveness but also highlighting room for improvement, particularly in increasing the recall to ensure fewer phishing sites go undetected. The disparity between precision and recall suggests that while the model is reliable in its positive classifications, it is overly cautious, leading to a significant number of false negatives. This could necessitate adjustments or enhancements to the model to balance the sensitivity and specificity better, thereby making it more effective for practical use in phishing detection.
+
+**Naïve Bayes**
+
+```{r}
+# Predicting with the Naïve Bayes
+predictions_bayes <- predict(fitted_bayes, test_data, type = "class")
+
+# Generating the confusion matrix
+conf_matrix_bayes <- table(Predicted = predictions_bayes, Actual = test_data$Class)
+
+# Calculating precision, recall, and accuracy
+precision_bayes <- conf_matrix_bayes[2, 2] / sum(conf_matrix_bayes[2, ])
+recall_bayes <- conf_matrix_bayes[2, 2] / sum(conf_matrix_bayes[, 2])
+accuracy_bayes <- sum(diag(conf_matrix_bayes)) / sum(conf_matrix_bayes)
+
+# Print the metrics
+cat("Confusion Matrix for Naïve Bayes:\n")
+print(conf_matrix_bayes)
+cat(sprintf("Precision of Naïve Bayes: %.2f\n", precision_bayes))
+cat(sprintf("Recall of Naïve Bayes: %.2f\n", recall_bayes))
+cat(sprintf("Accuracy of Naïve Bayes: %.2f\n", accuracy_bayes))
+
+```
+
+The confusion matrix for the Naïve Bayes model shows that while the model predicted all phishing cases correctly (a recall of 1.00), it struggled significantly with false positives, predicting many legitimate sites as phishing. This resulted in only 47% of the phishing predictions being correct (a precision of 0.47). Consequently, the overall accuracy of the model is also 47%, indicating that nearly half of all predictions were correct. This outcome suggests a model that is highly sensitive to detecting phishing sites but at the cost of many incorrect phishing classifications, which can lead to a less practical model if false positives are a critical concern.
+
+
+**Bagging model**
+```{r}
+# Predicting with the Bagging model
+predictions_bagging <- predict(fitted_bag, as.data.frame(test_data), type = "class")
+
+# Generating the confusion matrix
+conf_matrix_bagging <- predictions_bagging$confusion
+
+# Calculating precision, recall, and accuracy
+precision_bagging <- conf_matrix_bagging[2, 2] / sum(conf_matrix_bagging[2, ])
+recall_bagging <- conf_matrix_bagging[2, 2] / sum(conf_matrix_bagging[, 2])
+accuracy_bagging <- sum(diag(conf_matrix_bagging)) / sum(conf_matrix_bagging)
+
+# Print the metrics
+cat("Confusion Matrix for Bagging:\n")
+print(conf_matrix_bagging)
+cat(sprintf("Precision of Bagging: %.2f\n", precision_bagging))
+cat(sprintf("Recall of Bagging: %.2f\n", recall_bagging))
+cat(sprintf("Accuracy of Bagging: %.2f\n", accuracy_bagging))
+
+
+```
+The Bagging model applied to the dataset exhibited reasonable performance metrics but also highlighted areas for improvement. The confusion matrix showed 215 true negatives and 123 true positives, which signifies that the model correctly identified both legitimate and phishing sites in these instances. However, there were 100 false positives and 40 false negatives, indicating errors in misclassifying legitimate sites as phishing and vice versa. Consequently, the model achieved a precision of 0.75, meaning that 75% of its phishing predictions were accurate, and a recall of 0.55, which means it successfully identified 55% of all actual phishing cases. The overall accuracy of the model was 71%, reflecting its ability to correctly predict the class of 71% of the instances in the test data.While the Bagging model shows good precision, indicating reliability in its positive predictions, the moderate recall rate points to a need for improvement in detecting all phishing instances effectively. This suggests that the model, while useful, might not be fully reliable in scenarios where missing any phishing attempt could lead to significant consequences. The balance between precision and recall, alongside the total accuracy, underscores the potential utility of the model in practical applications but also highlights the necessity for further tuning to enhance its recall capabilities without compromising precision
+
+
+
+**Boosting model**
+```{r}
+# Predicting with the Boosting model
+predictions_boosting <- predict(fitted_boost, as.data.frame(test_data), type = "class")
+
+# Generating the confusion matrix
+conf_matrix_boosting <- predictions_boosting$confusion
+
+# Calculating precision, recall, and accuracy
+precision_boosting <- conf_matrix_boosting[2, 2] / sum(conf_matrix_boosting[2, ])
+recall_boosting <- conf_matrix_boosting[2, 2] / sum(conf_matrix_boosting[, 2])
+accuracy_boosting <- sum(diag(conf_matrix_boosting)) / sum(conf_matrix_boosting)
+
+# Print the metrics
+cat("Confusion Matrix for Boosting:\n")
+print(conf_matrix_boosting)
+cat(sprintf("Precision of Boosting: %.2f\n", precision_boosting))
+cat(sprintf("Recall of Boosting: %.2f\n", recall_boosting))
+cat(sprintf("Accuracy of Boosting: %.2f\n", accuracy_boosting))
+
+
+```
+The boosting model correctly identified 196 legitimate sites (true negatives) and 135 phishing sites (true positives), while incorrectly classifying 88 legitimate sites as phishing (false positives) and 59 phishing sites as legitimate (false negatives). This resulted in a precision of 0.70, indicating that 70% of the predicted phishing classifications were correct. The model's recall rate was 0.61, showing that it correctly identified 61% of all actual phishing cases. Overall, the model achieved an accuracy of 0.69, reflecting its effectiveness in classifying both legitimate and phishing sites accurately for 69% of the instances in the test data.In addition to that,the comparative analysis between the Bagging and Boosting models based on their classification performance shows some nuanced differences. The Bagging model achieves a slightly higher accuracy of 0.71 compared to the Boosting model's 0.69, suggesting it is marginally better at correctly identifying both phishing and legitimate sites overall. In terms of precision, the Bagging model also leads with a score of 0.75 against the Boosting model's 0.70, indicating it has a lower rate of false positives and is more dependable when labeling a site as phishing. However, the Boosting model excels in recall with a value of 0.61, surpassing the Bagging model's 0.55. This higher recall indicates that the Boosting model is more effective at identifying all actual phishing cases, capturing more phishing sites that could potentially slip through the defenses set by the Bagging model.
+
+
+
+**Random Forest**
+```{r}
+# Predicting with the Random Forest
+predictions_forest <- predict(fitted_forest, test_data, type = "class")
+
+# Generating the confusion matrix
+conf_matrix_forest <- table(Predicted = predictions_forest, Actual = test_data$Class)
+
+# Calculating precision, recall, and accuracy
+precision_forest <- conf_matrix_forest[2, 2] / sum(conf_matrix_forest[2, ])
+recall_forest <- conf_matrix_forest[2, 2] / sum(conf_matrix_forest[, 2])
+accuracy_forest <- sum(diag(conf_matrix_forest)) / sum(conf_matrix_forest)
+
+# Print the metrics
+cat("Confusion Matrix for Random Forest:\n")
+print(conf_matrix_bayes)
+cat(sprintf("Precision of Random Forest: %.2f\n", precision_forest))
+cat(sprintf("Recall of Random Forest: %.2f\n", recall_forest))
+cat(sprintf("Accuracy of Random Forest: %.2f\n", accuracy_forest))
+
+
+```
+The Random Forest model correctly classified only 5 legitimate sites as legitimate (true negatives) and 222 phishing sites as phishing (true positives), while misclassifying 250 legitimate sites as phishing (false positives) and only 1 phishing site as legitimate (false negative). This results in a precision of 0.71, indicating that 71% of the instances it predicted as phishing were actually phishing. The recall is 0.60, showing that it correctly identified 60% of all actual phishing instances. Overall, the model achieved an accuracy of 0.70, correctly predicting the class of 70% of the instances in the test data. This shows a moderate level of effectiveness in correctly predicting and classifying the data, with room for improvement, especially in reducing the number of legitimate sites misclassified as phishing.
+
+
+**Overal Analysis**
+In a comparative analysis of various classification models applied to the phishing detection dataset, the models exhibited distinct performance characteristics across precision, recall, and accuracy metrics. The *Decision Tree* and *Bagging models* both demonstrated a *higher overall accuracy* of 0.71, with the *Decision Tree* showing the *highest precision* at 0.79 but a lower recall of 0.50, indicating a tendency to miss half of the actual phishing sites. In contrast, the *Naïve Bayes* model excelled in *recall* with a perfect score of 1.00, capturing all phishing instances but at the expense of the lowest precision and accuracy (0.47), which indicates a high rate of false positives. The Boosting model provided a balance with a recall of 0.61 and a precision of 0.70, achieving a near-average accuracy of 0.69. Lastly, the Random Forest model showcased a precision of 0.71 and a recall of 0.60, with a slightly better accuracy than Boosting at 0.70. Each model's suitability varies based on specific needs such as the criticality of avoiding false positives or the imperative to identify as many true threats as possible.
+
+Overall, upon reviewing the results across various models for phishing detection, it's clear that while the Naïve Bayes model excels in recall by perfectly identifying all phishing instances, it falls short in precision and accuracy compared to other models. This may suggest a potential for high false positive rates, where legitimate sites are often misclassified as malicious. In contrast, models like Decision Tree and Random Forest demonstrate higher accuracy and precision, indicating their effectiveness in correctly labeling phishing sites without as many false positives. However, none of the models significantly outperformed the others across all metrics, indicating that the choice of model would benefit from a more nuanced approach based on specific operational requirements. Further investigation and tuning might be necessary to enhance their performance substantially, suggesting a deeper analysis into feature selection, model parameters, or even ensemble methods that could leverage the strengths of each model to improve overall results.
+
+# 6.Classifier Performance Analysis: Confidence and ROC Curves
+
+In this task, we aim to evaluate the performance of several classification models in predicting phishing websites using a test dataset. Each model's effectiveness in distinguishing between 'phishing' and 'legitimate' classes will be assessed through Receiver Operating Characteristic (ROC) curves, which plot the true positive rate (TPR) against the false positive rate (FPR) at various threshold settings. This visual comparison will be complemented by calculating the Area Under the Curve (AUC) for each model, providing a single scalar value to summarize the overall accuracy of the predictions.
+
+**Computing the confidence score for each prediction**
+```{r}
+#Computing the confidence score for each prediction
+# For Decision Tree 
+prob_tree <- predict(fitted_tree, test_data, type = "vector")[,2]
+
+# For Naïve Bayes
+prob_bayes <- predict(fitted_bayes, test_data, type = "raw")[,2]
+
+# For Bagging
+prob_bagging <- predict(fitted_bag, as.data.frame(test_data))$prob[,2]
+
+# For Boosting 
+prob_boosting <- predict(fitted_boost, as.data.frame(test_data))$prob[,2]
+
+# For Random Forest
+prob_forest <- predict(fitted_forest, test_data, type = "prob")[,2]
+
+```
+
+
+**Plotting the ROC graph **
+```{r}
+
+
+# Create prediction objects
+pred_tree <- prediction(prob_tree, test_data$Class)
+pred_bayes <- prediction(prob_bayes, test_data$Class)
+pred_bagging <- prediction(prob_bagging, test_data$Class)
+pred_boosting <- prediction(prob_boosting, test_data$Class)
+pred_forest <- prediction(prob_forest, test_data$Class)
+
+# Compute performance measures
+perf_tree <- performance(pred_tree, "tpr", "fpr")
+perf_bayes <- performance(pred_bayes, "tpr", "fpr")
+perf_bagging <- performance(pred_bagging, "tpr", "fpr")
+perf_boosting <- performance(pred_boosting, "tpr", "fpr")
+perf_forest <- performance(pred_forest, "tpr", "fpr")
+
+# Convert performances to data frames for ggplot
+df_tree <- data.frame(FPR=perf_tree@x.values[[1]], TPR=perf_tree@y.values[[1]], Model="Decision Tree")
+df_bayes <- data.frame(FPR=perf_bayes@x.values[[1]], TPR=perf_bayes@y.values[[1]], Model="Naive Bayes")
+df_bagging <- data.frame(FPR=perf_bagging@x.values[[1]], TPR=perf_bagging@y.values[[1]], Model="Bagging")
+df_boosting <- data.frame(FPR=perf_boosting@x.values[[1]], TPR=perf_boosting@y.values[[1]], Model="Boosting")
+df_forest <- data.frame(FPR=perf_forest@x.values[[1]], TPR=perf_forest@y.values[[1]], Model="Random Forest")
+
+# Combine all data frames
+roc_data <- rbind(df_tree, df_bayes, df_bagging, df_boosting, df_forest)
+
+# Plot with ggplot2
+ggplot(roc_data, aes(x=FPR, y=TPR, color=Model)) +
+  geom_line(linewidth=1) +
+  geom_abline(linetype="dashed") +
+  labs(title="ROC Curves Comparison", subtitle="Comparing Classification Models for Phishing Detection",
+       x="False Positive Rate (FPR)", y="True Positive Rate (TPR)", color="Model") +
+  theme_minimal() +
+  theme(plot.title = element_text(hjust = 0.5),     # Center the title
+        plot.subtitle = element_text(hjust = 0.5))  # Center the subtitle
+
+```
+
+The plot  displays the ROC curves of different classification models used for phishing detection. This visual comparison allows us to evaluate the trade-offs between true positive rates (TPR) and false positive rates (FPR) for each model. Each curve represents a different model, with the area under the curve (AUC) indicating the overall ability of the model to discriminate between the classes. The diagonal dashed line represents a random classifier, and the closer the curve is to the upper left corner, the better the model's performance. This plot helps in visually assessing which models are more effective at distinguishing between phishing and legitimate cases, with the aim of identifying the model that optimally balances sensitivity (TPR) and specificity (1 - FPR).
+Based on the ROC curves, the effectiveness of the models can be inferred by how close their curves are to the top left corner of the plot. A model whose curve is closer to the top left corner generally indicates a higher true positive rate (TPR) and a lower false positive rate (FPR), which translates to better performance.
+Analyzing the ROC curve plot for the different classification models used in phishing detection, it is evident that some models outperform others in terms of their ability to discriminate between the two classes. Notably, the Random Forest and Bagging models, represented by the purple and red curves, respectively, exhibit superior performance. These curves are closer to the top-left corner of the plot, indicating a higher true positive rate for any given false positive rate, which is desirable in predictive modeling. The Boosting and Decision Tree models also perform commendably but do not reach the effectiveness of the Random Forest and Bagging models. The Naive Bayes model, shown with a blue curve, lags behind the others, indicating a lower true positive rate across the spectrum of false positive rates, suggesting it is less effective in distinguishing between phishing and legitimate instances in this specific dataset. Overall, Random Forest and Bagging emerge as the most effective models in this analysis, offering a robust toolset for phishing detection.
+
+**Calculating AUC**
+
+```{r}
+# Calculate AUC
+auc_tree <- performance(pred_tree, measure = "auc")@y.values[[1]]
+auc_bayes <- performance(pred_bayes, measure = "auc")@y.values[[1]]
+auc_bagging <- performance(pred_bagging, measure = "auc")@y.values[[1]]
+auc_boosting <- performance(pred_boosting, measure = "auc")@y.values[[1]]
+auc_forest <- performance(pred_forest, measure = "auc")@y.values[[1]]
+
+# Print AUC
+cat("AUC for Decision Tree: ", auc_tree, "\n")
+cat("AUC for Naive Bayes: ", auc_bayes, "\n")
+cat("AUC for Bagging: ", auc_bagging, "\n")
+cat("AUC for Boosting: ", auc_boosting, "\n")
+cat("AUC for Random Forest: ", auc_forest, "\n")
+
+```
+In evaluating the classification models for phishing detection based on their ROC curves and AUC scores, distinct differences in performance emerge. The Random Forest classifier leads in effectiveness with the highest AUC score of 0.7644, indicating its superior capability in distinguishing between phishing and legitimate cases. Following closely are the Bagging and Boosting models, with AUC scores of 0.7563 and 0.7517 respectively, showcasing strong performance though slightly less optimal than Random Forest.The Decision Tree model, with an AUC of 0.7452, also performs well, but it trails the ensemble methods (Random Forest, Bagging, Boosting), suggesting that the integration of multiple decision-making pathways enhances predictive accuracy and model robustness against varied data patterns.The Naive Bayes classifier, however, records the lowest AUC at 0.6682. This indicates a less effective performance in classifying phishing websites, possibly due to its underlying assumption of feature independence, which might not hold true in complex phishing detection scenarios.
+Overall, while all models demonstrate the ability to classify phishing attempts to various extents, ensemble methods, particularly Random Forest, provide a more reliable and robust solution for such classification challenges, as reflected in their superior AUC values.
+
+
+# 7.Classifier Comparison: Performance Metrics
+```{r}
+# Combine the metrics into a table, and display it.
+com_metrics <- rbind(
+cbind(Model = "Decision Tree",Precision=precision_tree,Recall=recall_tree,Accuracy=accuracy_tree,AUC = auc_tree),
+cbind(Model = "Naive Bayes",Precision=precision_bayes,Recall=recall_bayes,Accuracy=accuracy_bayes, AUC = auc_bayes), 
+cbind(Model = "Bagging",Precision=precision_bagging,Recall=recall_bagging,Accuracy=accuracy_bagging, AUC = auc_bagging), 
+cbind(Model = "Boosting",Precision=precision_boosting,Recall=recall_boosting,Accuracy=accuracy_boosting, AUC = auc_boosting),
+cbind(Model = "Random Forest",Precision=precision_forest,Recall=recall_forest,Accuracy=accuracy_forest, AUC = auc_forest)
+)
+
+# Convert combined metrics to a data frame 
+com_metrics <- as.data.frame(com_metrics)
+com_metrics
+```
+
+
+In the analysis of various classification models used for phishing detection, the Bagging and Decision Tree models demonstrate high levels of overall accuracy, crucial for practical deployment scenarios. Specifically, the Bagging model achieves an accuracy of approximately 70.71% and presents a robust AUC of 75.63%, suggesting it effectively balances between true positives and false positives. This model combines the strength of multiple decision trees, typically leading to improved performance over individual models due to variance reduction.
+
+On the other hand, the Decision Tree model, with an accuracy of about 70.50% and an AUC of 74.52%, also shows commendable performance, especially in terms of precision, which is the highest among all models at roughly 79.29%. This indicates that when the Decision Tree predicts an instance as phishing, it is very likely to be correct, making it particularly useful in environments where false positives (legitimate sites marked as phishing) are a concern.
+
+In contrast to the Naive Bayes model, which, while having the highest recall, sacrifices precision and accuracy, both the Bagging and Decision Tree models offer a more balanced approach. They provide a higher assurance of correctly classifying both phishing and legitimate sites, making them preferable choices for applications where both types of errors—false positives and false negatives—need to be minimized. This balanced capability makes them potentially more suitable for real-world applications where the consequences of incorrect classifications can be significant.
+
+Additionally, the Random Forest and Bagging models exhibit the highest AUC values, indicating superior performance in distinguishing between phishing and legitimate sites compared to other models. This enhanced capability highlights their effectiveness in scenarios where a high degree of discriminatory power is required, further validating their utility in complex phishing detection environments.
+
+
+# 8.Feature Importance Analysis and Variable Selection
+
+**Decision Tree** 
+
+To determine the key variables influencing whether a website is phishing or legitimate, we examine the constructed decision tree from our earlier analysis. By visualizing the tree and reviewing its structure, we gain insights into which attributes most significantly split the data, thus indicating their importance in the classification process.
+```{r}
+# Display the decision tree.
+plot(fitted_tree)
+text(fitted_tree)
+
+# # Examine the details of the trained decision tree model.
+summary(fitted_tree)
+```
+The decision tree analysis for predicting whether a website is phishing or legitimate highlights the significant impact of specific variables on the classification process. According to the model's summary, the variables "A18," "A01," "A04," "A23," and "A22" are pivotal in constructing the tree, indicating their strong predictive power and relevance in distinguishing between phishing and legitimate sites. Among these, "A18" emerges as the most critical variable, suggesting that it plays a central role in the initial splits of the tree, thus having a substantial influence on the model's decisions.
+
+Variables that are not part of the tree construction—those not listed as important in the tree summary—can be considered less critical for the model's performance. These omitted variables appear to contribute little to reducing the model's uncertainty regarding the classification of websites. As a result, they could potentially be excluded from the model with minimal impact on its overall effectiveness. This exclusion can lead to a simpler, more interpretable model, reducing computation time and resource usage without significantly compromising accuracy.
+
+In practical terms, focusing on the essential variables "A18," "A01," "A04," "A23," and "A22" allows for a more streamlined data collection and preprocessing stage, ensuring that only the most informative features are considered during model training. This approach not only enhances the efficiency of the model but also aids in better understanding the key characteristics that differentiate phishing websites from legitimate ones, providing valuable insights into website security analysis.
+
+**Naïve Bayes**
+The Naïve Bayes model is inherently structured in a way that does not facilitate identifying the most influential features in isolation. This model operates by calculating the likelihood of outcomes based on conditional probabilities rather than assigning weight to individual attributes. As a result, Naïve Bayes does not emphasize the importance of any single attribute over others. Instead, it dynamically adjusts to new data, seamlessly integrating changes into its probabilistic framework. Thus, the data inputs and the model itself are integrally connected within the Naïve Bayes approach, making it unique in how it handles variable importance.
+
+
+
+**Bagging**
+For the bagging model, determining the most significant predictors is straightforward due to the `adabag` package, which inherently supports the extraction of relative importance values for the variables used in the model. This feature is particularly useful for identifying which features have the most impact on the model's predictions. By setting a consistent seed before model training and variable importance extraction, we ensure the reproducibility of our results. This step is critical in data science to maintain the consistency of the analysis across different runs. We analyze the top 5 variables with the highest importance, providing insights into the features that most strongly predict whether a website will be phishing or legitimate. This methodological approach allows for a clear understanding of the model's behavior and aids in the optimization and simplification of the model for future analyses.
+
+```{r}
+# Set a random seed for reproducibility
+set.seed(SEED)
+
+
+# Pull the top 5 variables with the highest importance
+top_important_vars <- fitted_bag$importance %>%
+  tibble::enframe(name = "Variable", value = "Importance") %>%
+  dplyr::arrange(desc(Importance)) %>%
+  dplyr::slice(1:5)
+
+# Print the top important variables
+print(top_important_vars)
+
+# Extract and list the least 5 impactful variables
+least_important_vars <- fitted_bag$importance %>%
+  tibble::enframe(name = "Variable", value = "Importance") %>%
+  dplyr::arrange(Importance) %>%
+  dplyr::slice(1:5)
+
+# Print the least important variables
+print(least_important_vars)
+
+```
+
+In the context of the Bagging model used for differentiating phishing websites from legitimate ones, the analysis of variable importance showcases A01 as the most influential variable, possessing the highest computed importance score. This indicates that A01 plays a critical role in improving the model's predictions by effectively reducing variance among the bootstrapped decision trees. Following closely are variables A23, A18, A22, and A08, which also contribute significantly to the model's ability to classify accurately.
+
+Conversely, variables such as A02, A03, A05, A07, and A09 register an importance score of zero, indicating they do not influence the outcome of the model. Their non-contribution suggests that these features do not provide any valuable information for distinguishing between phishing and legitimate sites within this model's framework. Removing these variables could potentially reduce model complexity and computational load without impacting the accuracy of the model. This pruning of non-impactful variables can streamline the predictive process, focusing efforts on the features that genuinely matter for effective classification.
+
+**Boosting**
+For the boosting model, we utilize the same approach as applied in the bagging model to extract variable importance. 
+
+```{r}
+
+
+# Set a random seed for reproducibility
+set.seed(SEED)
+
+# Pull the top 5 variables with the highest importance
+top_important_vars <- fitted_boost$importance %>%
+  tibble::enframe(name = "Variable", value = "Importance") %>%
+  dplyr::arrange(desc(Importance)) %>%
+  dplyr::slice(1:5)
+
+# Print the top important variables
+print(top_important_vars)
+
+# Extract and list the least 5 impactful variables
+least_important_vars <- fitted_boost$importance %>%
+  tibble::enframe(name = "Variable", value = "Importance") %>%
+  dplyr::arrange(Importance) %>%
+  dplyr::slice(1:5)
+
+# Print the least important variables
+print(least_important_vars)
+
+```
+
+In the Boosting model for classifying websites as phishing or legitimate, the analysis reveals that variable A18 stands out as the most critical, showcasing the highest importance value. This implies A18 significantly influences the model's decision-making process, improving its accuracy in detecting phishing sites. The variables A22, A01, A23, and A12 also demonstrate substantial importance, indicating their strong contributions to the model's performance in identifying characteristics of phishing websites.
+
+On the other end of the spectrum, variables A03, A05, A06, A07, and A09 display zero importance, suggesting they do not contribute to the predictive capability of the Boosting model. Their lack of impact on the model's performance implies that these features can be omitted from the analysis without any loss in classification effectiveness. This reduction in model complexity can lead to more efficient computations and potentially faster prediction times without compromising the accuracy of the model. The focus on significant variables helps in fine-tuning the model to capture the most relevant patterns for phishing detection effectively.
+
+**Random Forest**
+To effectively determine the most important variables in a Random Forest model for predicting whether a website is phishing or legitimate, we utilize the MeanDecreaseGini index. This metric quantifies the decrease in node impurity, weighted by the probability of reaching that node, averaged over all trees within the forest. A higher MeanDecreaseGini value indicates that a variable frequently and significantly clarifies the model's decisions, making it a crucial predictor. This approach not only highlights which features are most impactful in distinguishing between phishing and legitimate websites but also enhances the interpretability of the model. It allows for an aggregated understanding across multiple decision trees, thus mitigating the risk of overfitting to specific data peculiarities that might occur in a single tree analysis. By identifying both the most and least influential variables, this method guides efficient resource allocation, focusing on significant features while potentially reducing the dataset's complexity by omitting less impactful variables. This leads to more streamlined, effective modeling that prioritizes crucial predictive factors, ensuring robust performance without unnecessary data processing overhead.
+
+
+```{r}
+
+
+# Obtain and transform the importance data
+importance_data <- as.data.frame(fitted_forest$importance)
+importance_data <- importance_data %>%
+  arrange(desc(MeanDecreaseGini))
+
+# Select the top 5 most impactful variables based on Gini decrease
+top_5_impactful <- head(importance_data, 5)
+print(top_5_impactful)
+
+# Select the least impactful 5 variables based on Gini decrease
+least_5_impactful <- tail(importance_data, 5)
+print(least_5_impactful)
+
+
+```
+
+In employing the Random Forest model to discern between phishing and legitimate websites, the analysis of variable importance reveals that A18 stands out as the most influential variable, showing the highest MeanDecreaseGini value. This indicates that A18 is pivotal in splitting the decision trees within the forest, thus significantly enhancing node purity and contributing to substantial gains in the model's information processing. The variables A01, A22, A23, and A08 also demonstrate substantial importance, aligning with high Gini decrease values, which further solidifies their roles in the accurate classification of websites.
+
+On the flip side, variables such as A05, A25, A07, A13, and A03 are marked by notably low MeanDecreaseGini scores, highlighting their minimal impact on the model’s performance. Particularly, A03, with a Gini decrease of zero, demonstrates no contribution to the classification process, suggesting its potential omission from the data could streamline the model without sacrificing accuracy. This selective focus on highly impactful variables not only simplifies the model, making it more interpretable and quicker to execute, but also ensures that computational resources are allocated to analyzing features that genuinely affect the outcome, thereby optimizing the overall efficiency of the predictive framework.
+
+**Overall Analysis**
+Across the different models utilized for predicting whether a website is phishing or legitimate, certain variables consistently emerge as highly influential, while others show negligible importance, suggesting potential for model optimization.
+
+For instance, A18 is a standout variable in Decision Tree, Boosting and Random Forest models, marking it as a critical feature for identifying phishing websites. This consistency across different models underscores its significance and reliability as a strong predictor. Similarly, variables like A01, A22, and A23 also frequently appear among the top contributors, indicating their pivotal role in the classification process.
+
+Conversely, variables such as A03, A05, A06, A07, and A09 consistently show minimal to no importance across multiple models, including Boosting and Bagging. Their lack of influence on the model's performance suggests they could be excluded from future analyses, simplifying the models without sacrificing accuracy. This reduction not only streamlines the data processing and model training phases but also potentially improves model interpretability and speeds up prediction times.
+
+The identification of these key variables can guide the feature selection process in developing more efficient and effective phishing detection systems. By focusing on the most impactful variables, models can be optimized for better performance, faster execution, and potentially lower computational costs, all while maintaining high levels of accuracy and reliability in detecting phishing activities.
+
+# 9.Simplifying the Classifier for Manual Classification*
+In Q9, we aim to develop a classifier that simplifies the process of identifying phishing websites for manual use, emphasizing the need for a model that any individual can understand and apply without complex computations.To create a classifier simple enough for a person to classify whether a website is phishing or legitimate by hand, I will use a simplified version of the Decision Tree classifier. Decision Trees are particularly suitable for manual classification because they break down decisions into binary questions, leading to a final classification based on the answers to those questions.  Decision trees, in contrast to ensemble methods such as Random Forest, Boosting, or Bagging, stand out for their straightforward, logical structure that mirrors decision-making in everyday situations. Therefore, we focus on creating a simplified decision tree model. 
+
+```{r}
+fitted_tree
+```
+The decision tree we constructed in Q4, which includes multiple levels of branching based on attributes such as A18, A01, A04, A23, and A22, suggests a potential overfitting scenario due to its complexity. This complexity is evident from the tree’s deep branches and multiple splits, which might make the model too specific to the training data, capturing noise rather than underlying patterns that generalize well. Notably, the presence of terminal nodes with very few samples and high probability extremes (such as 0.98246 for class 0) indicates that the tree might be too finely tuned to the quirks of the training set.Therefore, to make the classification task manageable without specialized tools, we are opting to develop a simpler decision tree. This approach will ensure that the model is straightforward enough to be used manually, enhancing its accessibility and usability in everyday scenarios without compromising the integrity of decision-making.
+
+
+In the decision tree constructed earlier, the attributes A18, A01, and A23 emerge as pivotal in determining whether a site is phishing or legitimate, making them prime candidates for a simplified classifier.These three attributes are chosen for the simplified model due to their decisive impact on the tree's branching, providing a robust yet straightforward framework for manual classification by capturing the most significant splits in the dataset.
+
+
+
+**Selecting the attributes for the simplified model**
+
+
+```{r}
+
+# List of the important attributes that are chosen for the simplified model
+important_attributes <- c("A01", "A18", "A23","Class") # Subsetting the training data.
+train_subset <- train_data %>% select(all_of(important_attributes))
+names(train_subset)
+
+```
+
+**Building the classifier**
+```{r}
+
+set.seed(SEED)
+
+# Build the new simplified  tree with the training subset.
+fitted_simple_tree <- tree(Class~ ., data = train_subset)
+plot(fitted_simple_tree)
+text(fitted_simple_tree)
+summary(fitted_simple_tree)
+
+
+```
+
+The simplified decision tree model has been deliberately streamlined to use fewer terminal nodes (5 instead of 7) compared to the more complex model from Question 4. This approach was intended to mitigate overfitting and enhance the model's applicability in real-world scenarios where simplicity and interpretability are essential.
+
+*Performance Metrics Comparison*:
+Residual Mean Deviance: The residual mean deviance is slightly higher in the simplified model (1.138) compared to the original model (1.106). This indicates a slight decrease in the model fit to the training data, which is a trade-off for increased simplicity and potentially better generalization.
+Misclassification Error Rate: The misclassification error rate is slightly higher in the simplified model (28.07%) compared to the original model (27.26%). This increase is minimal but suggests that the simplified model sacrifices a small amount of accuracy for the benefit of reduced complexity.
+
+*Evaluation Against Overfitting*:
+The original model, with a more detailed structure using attributes A18, A01, A04, A23, and A22, and more terminal nodes, shows a lower misclassification error rate, suggesting a better fit to the training data. However, this can be indicative of overfitting, where the model is too finely tuned to the training dataset, potentially at the expense of its performance on new, unseen data.
+The simplified model, with fewer nodes, avoids fitting excessively to the nuances of the training data, promoting better generalization to new data. This is critical in practical applications where the model needs to perform well across different datasets and conditions.
+
+Overall, the simplified decision tree, by design, trades off a bit of accuracy for simplicity and robustness, making it less prone to overfitting and more suitable for real-world applications where decisions need to be made quickly and transparently. This makes it a valuable alternative, especially in environments where interpretability is as crucial as predictive accuracy.
+
+
+**Evaluation of the model performance**
+
+```{r}
+# Predicting with the Decision Tree model
+predictions_tree <- predict(fitted_simple_tree, test_data, type = "class")
+
+# Generating confusion matrix
+conf_matrix_tree <- table(Predicted = predictions_tree, Actual = test_data$Class)
+
+# Calculating precision, recall, and accuracy
+precision_simple_tree <- conf_matrix_tree[2, 2] / sum(conf_matrix_tree[2, ])
+recall_simple_tree <- conf_matrix_tree[2, 2] / sum(conf_matrix_tree[, 2])
+accuracy_simple_tree <- sum(diag(conf_matrix_tree)) / sum(conf_matrix_tree)
+
+
+
+
+# Print the metrics
+cat("Confusion Matrix for Simplified Decision Tree:\n")
+print(conf_matrix_tree)
+cat(sprintf("Precision of Decision Tree: %.2f\n", precision_simple_tree))
+cat(sprintf("Recall of Decision Tree: %.2f\n", recall_simple_tree))
+cat(sprintf("Accuracy of Decision Tree: %.2f\n", accuracy_simple_tree))
+```
+The comparison between the simplified and the original decision tree models highlights important distinctions in their performance and suitability for real-world applications. The original decision tree model, with a precision of 0.79, shows a slightly better ability to predict true positives out of all positive predictions compared to the simplified model, which has a precision of 0.76. This suggests that the more complex structure of the original model may better minimize false positives. However, the recall of the simplified model is slightly higher at 0.53, compared to 0.50 in the original model, indicating it is marginally better at identifying actual positive cases.
+
+The accuracy of both models is quite close, with the original model slightly higher at 0.71 versus 0.70 for the simplified model, reflecting a minimal trade-off in overall predictive performance despite the reduced complexity in the simplified model. This slight reduction in accuracy and precision in the simplified model can be seen as a deliberate adjustment to mitigate overfitting—a common issue in more complex models—which enhances its ability to generalize better to new, unseen datasets.
+
+Overall, the simplified decision tree, by reducing the number of terminal nodes, aims to provide a more robust and generalizable model suitable for practical applications where interpretability and adaptability are crucial. This makes it an appealing alternative for scenarios where avoiding overfitting and maintaining model simplicity are as important as achieving high accuracy and precision.
+
+```{r}
+
+# Predict probabilities using the fitted Simplified Decision Tree model on the test data
+prob_simple_tree <- predict(fitted_simple_tree, test_data, type = "vector")[,2]
+
+# Create prediction object using the probabilities and actual class labels from the test data
+pred_simple_tree <- prediction(prob_simple_tree, test_data$Class)
+
+# Calculate AUC (Area Under the ROC Curve) for the Simplified Decision Tree model
+auc_simple_tree <- performance(pred_simple_tree, measure = "auc")@y.values[[1]]
+
+# Combine the evaluation metrics into a table for comparison
+combined_metrics <- rbind(
+  # Combine metrics for the Decision Tree model
+  cbind(Model = "Decision Tree", 
+        Precision = precision_tree,  # Precision of the Decision Tree model
+        Recall = recall_tree,        # Recall of the Decision Tree model
+        Accuracy = accuracy_tree,    # Accuracy of the Decision Tree model
+        AUC = auc_tree),             # AUC of the Decision Tree model
+  # Combine metrics for the Simplified Decision Tree model
+  cbind(Model = "Simplified Decision Tree", 
+        Precision = precision_simple_tree,  # Precision of the Simplified Decision Tree model
+        Recall = recall_simple_tree,        # Recall of the Simplified Decision Tree model
+        Accuracy = accuracy_simple_tree,    # Accuracy of the Simplified Decision Tree model
+        AUC = auc_simple_tree)             # AUC of the Simplified Decision Tree model
+)
+
+# Convert combined metrics to a data frame 
+combined_metrics <- as.data.frame(combined_metrics)
+
+# Display the combined metrics table
+combined_metrics  
+
+
+```
+Comparing the original Decision Tree model with its Simplified counterpart reveals nuanced distinctions in their performance and applicability. The original model demonstrates a marginally higher precision at 0.7929 compared to the Simplified model's 0.7613, suggesting it may excel at minimizing false positives. However, the Simplified Decision Tree achieves a slightly elevated recall of 0.5291, indicating its marginally superior ability to correctly identify actual positive cases compared to the original model's 0.4978. Both models exhibit comparable accuracies, with the original Decision Tree model slightly edging out at 0.7050 versus the Simplified model's 0.7029. Moreover, their AUC values remain similar, with the original model at 0.7452 and the Simplified model at 0.7430, signifying similar discrimination abilities between positive and negative classes. The slight trade-off in accuracy and precision in the Simplified model is interpreted as a strategic move to mitigate overfitting and enhance generalizability to unseen data, rendering it a more robust and interpretable option for real-world applications. 
+
+
+# 10.Optimizing Tree-Based Classifier for Improved Performance*
+
+To enhance the classification performance, I'll focus on tuning the hyperparameters of both the Decision Tree and Random Forest algorithms through cross-validation. I've selected these two algorithms for their distinct characteristics and capabilities:
+
+1. **Decision Tree**: Decision Trees offer simplicity and interpretability, making them a good starting point for modeling. However, they are prone to overfitting, especially with complex datasets. By adjusting parameters like the maximum depth of the tree, minimum samples required to split a node, and minimum samples required at each leaf node, I can control overfitting and potentially improve the Decision Tree's performance.
+
+2. **Random Forest**: Random Forest is an ensemble learning method that constructs multiple decision trees during training and outputs the mode of the classes (classification) or the mean prediction (regression) of the individual trees. Random Forests are robust against overfitting and tend to perform well on a variety of datasets. They also handle high-dimensional data and missing values effectively. By tuning hyperparameters such as the number of trees in the forest (ntree) and the number of variables randomly sampled as candidates at each split (mtry), I can optimize the Random Forest model for better classification accuracy.
+
+By leveraging the strengths of both Decision Tree and Random Forest algorithms, I aim to create a more robust and accurate classifier. The Decision Tree provides interpretability, while the Random Forest offers improved performance and generalizability. Through cross-validation and careful hyperparameter tuning, I will seek to maximize the classification performance of both models on the given dataset.
+
+Before we enhance the model, we need to look at the complete decision tree we built earlier. This step is crucial because it helps us understand how the model makes decisions and if it's too complex or overly focused on certain factors. By examining the tree, we can see if it's fitting too closely to the training data, which might hurt its ability to work well with new data. Also, we can figure out which features are most important in making predictions. This information helps us decide which aspects to focus on when improving the model. Lastly, by comparing any changes we make to this baseline tree, we can tell if our adjustments are actually improving the model's performance. So, taking a good look at the original tree sets the stage for making meaningful improvements.
+```{r}
+plot(fitted_tree)
+text(fitted_tree)
+summary(fitted_tree)
+
+```
+
+To improve the decision tree model, we'll use a post-pruning strategy. Post-pruning involves building a large decision tree first and then pruning it back to find the optimal tree size. This helps prevent overfitting and improves the model's generalization performance.
+
+```{r}
+
+# Set seed for reproducibility
+set.seed(SEED)
+
+# Run 10-fold cross-validation
+fitted_tree_cv <- cv.tree(fitted_tree, FUN = prune.misclass, K = 10)
+
+# Compile the result of the 10-fold validation into a table
+result_table <- tibble(
+  Size = fitted_tree_cv$size,
+  Misclassifications = fitted_tree_cv$dev
+) %>%
+# Calculate misclassification ratio
+mutate(MisclassificationRatio = Misclassifications / sum(Misclassifications)) %>%
+# Arrange the table based on misclassification ratio
+arrange(MisclassificationRatio)
+
+# Print the result table
+print(result_table)
+
+```
+From the table, we can observe that the most optimal tree sizes are 7 and 5, both exhibiting the lowest misclassification ratio of 0.1872792. This indicates that these tree sizes resulted in the least amount of misclassifications during the 10-fold cross-validation process. With this information, we can proceed to prune the decision tree to these optimal sizes, ensuring that we achieve a balance between model complexity and predictive performance. Pruning the tree to these sizes will help prevent overfitting and improve the generalization ability of the model when applied to new, unseen data.
+
+```{r}
+# Prune the decision tree to size = 7
+pruned_tree_size_7 <- prune.misclass(fitted_tree, best = 7)
+
+# Plot pruned tree with size = 7
+plot(pruned_tree_size_7)
+text(pruned_tree_size_7)
+summary(pruned_tree_size_7)
+
+
+
+```
+
+```{r}
+
+# Prune the decision tree to size = 5
+pruned_tree_size_5 <- prune.misclass(fitted_tree, best = 5)
+
+# Plot pruned tree with size = 5
+plot(pruned_tree_size_5)
+text(pruned_tree_size_5)
+summary(pruned_tree_size_5)
+
+```
+
+When comparing the pruned decision trees with sizes 7 and 5, several key similarities and differences emerge. Both trees utilize the same set of variables - A18, A01, A23, and A22 - for construction, indicating their agreement on the most relevant features for classification. Additionally, they exhibit comparable performance metrics, with identical misclassification error rates of 0.2726, suggesting similar predictive accuracy on the training data. However, the trees diverge notably in their sizes and complexities. The tree with size 7 comprises 7 terminal nodes, while the size 5 tree has 5 terminal nodes, indicating that the latter is simpler with fewer decision points. This simplicity may enhance the size 5 tree's interpretability and generalization ability by avoiding the risk of overfitting inherent in more complex models. Conversely, the size 7 tree may capture more intricate patterns in the data but could potentially suffer from overfitting and reduced generalization to new data. Ultimately, the choice between the two trees hinges on the trade-off between model complexity and predictive performance, with the simpler size 5 tree offering a balance that may be preferable for real-world applications where interpretability and generalizability are paramount.
+
+```{r}
+# Predicting with the pruned decision tree with size 7
+predictions_size_7 <- predict(pruned_tree_size_7, test_data, type = "class")
+
+# Generating confusion matrix for pruned tree with size 7
+conf_matrix_size_7 <- table(Predicted = predictions_size_7, Actual = test_data$Class)
+
+
+# Calculate precision, recall, and accuracy for the pruned tree with size 7
+precision_size_7 <- conf_matrix_size_7[2, 2] / sum(conf_matrix_size_7[2, ])
+recall_size_7 <- conf_matrix_size_7[2, 2] / sum(conf_matrix_size_7[, 2])
+accuracy_size_7 <- sum(diag(conf_matrix_size_7)) / sum(conf_matrix_size_7)
+
+
+# Print the metrics
+cat("Confusion Matrix for pruned decision tree with size 7:\n")
+print(conf_matrix_tree)
+cat(sprintf("Precision of Decision Tree: %.2f\n",precision_size_7))
+cat(sprintf("Recall of Decision Tree: %.2f\n", recall_size_7))
+cat(sprintf("Accuracy of Decision Tree: %.2f\n", accuracy_size_7),"\n")
+
+# Predicting with the pruned decision tree with size 5
+predictions_size_5 <- predict(pruned_tree_size_5, test_data, type = "class")
+
+# Generating confusion matrix for pruned tree with size 5
+conf_matrix_size_5 <- table(Predicted = predictions_size_5, Actual = test_data$Class)
+
+# Calculate precision, recall, and accuracy for the pruned tree with size 5
+precision_size_5 <- conf_matrix_size_5[2, 2] / sum(conf_matrix_size_5[2, ])
+recall_size_5 <- conf_matrix_size_5[2, 2] / sum(conf_matrix_size_5[, 2])
+accuracy_size_5 <- sum(diag(conf_matrix_size_5)) / sum(conf_matrix_size_5)
+
+# Print the metrics
+cat("Confusion Matrix for pruned tree with size 5:\n")
+print(conf_matrix_tree)
+cat(sprintf("Precision of Decision Tree: %.2f\n", precision_size_5))
+cat(sprintf("Recall of Decision Tree: %.2f\n", recall_size_5))
+cat(sprintf("Accuracy of Decision Tree: %.2f\n", accuracy_size_5))
+
+```
+
+
+```{r}
+# Predict probabilities for AUC calculation
+prob_size_7 <- predict(pruned_tree_size_7, newdata = test_data, type = "vector")[, 2]
+prob_size_5 <- predict(pruned_tree_size_5, newdata = test_data, type = "vector")[, 2]
+
+# Create prediction objects for AUC calculation
+pred_size_7 <- prediction(prob_size_7, test_data$Class)
+pred_size_5 <- prediction(prob_size_5, test_data$Class)
+
+# Calculate AUC for both models
+auc_size_7 <- performance(pred_size_7, measure = "auc")@y.values[[1]]
+auc_size_5 <- performance(pred_size_5, measure = "auc")@y.values[[1]]
+
+# Combine the evaluation metrics into a table for comparison
+combined_metrics <- data.frame(
+  Model = c("Pruned Tree (Size 7)", "Pruned Tree (Size 5)"),
+  Precision = c(precision_size_7, precision_size_5),
+  Recall = c(recall_size_7, recall_size_5),
+  Accuracy = c(accuracy_size_7, accuracy_size_5),
+  AUC = c(auc_size_7, auc_size_5)
+)
+
+# Display the combined metrics table
+print(combined_metrics)
+
+```
+Both pruned decision trees with sizes 7 and 5 exhibit identical precision, recall, and accuracy values. However, the AUC for the pruned tree with size 7 (0.7451860) is slightly higher than that of the pruned tree with size 5 (0.7281896).Given that the AUC is a crucial metric for evaluating the overall performance of a classification model, we should prioritize the model with the higher AUC. In this case, the pruned decision tree with size 7 has the higher AUC, indicating better discriminatory power in distinguishing between positive and negative instances.Therefore, we should regard the pruned decision tree with size 7 as the better-performing model and consider it for further use or deployment. Conversely, the pruned decision tree with size 5, despite having similar precision, recall, and accuracy values, should be disregarded in favor of the superior model.
+
+
+**Random Forest**
+To enhance the performance of the random forest model, we adopt a comprehensive approach involving hyperparameter tuning and K-fold cross-validation. Hyperparameters serve as the driving force behind the learning algorithm, and fine-tuning them can substantially boost the model's accuracy.
+
+Initially, we construct a grid encompassing various hyperparameters, including the number of features considered for splitting at each tree node, the minimum number of samples required to be at a leaf node, and the number of trees in the forest. This grid serves as the foundation for exploring different combinations of hyperparameters.
+
+Subsequently, we employ 5-fold cross-validation, a robust technique for evaluating model performance on unseen data. Through this process, the dataset is divided into K folds, where the model is trained on K-1 folds and validated on the remaining fold. This iterative procedure enables us to compute the cross-validated accuracy, which represents the average accuracy across all validation rounds.
+
+Concurrently, we systematically apply each combination of hyperparameters from our grid to the model, aiming to identify the configuration that yields the highest cross-validated accuracy. This meticulous approach not only helps prevent overfitting but also offers insights into the model's generalization ability and aids in determining the optimal level of model complexity.
+
+It is noteworthy that we utilize all attributes in constructing the model, rather than a subset of important attributes. This decision is supported by the ensemble nature of random forests, which mitigates overfitting by aggregating the predictions of multiple decision trees. As a result, the noise learned by individual trees tends to cancel out, leading to an overall model that encapsulates a broader spectrum of knowledge than each individual tree alone.By adopting this systematic approach, we aim to significantly enhance the predictive performance of the random forest model, ensuring its robustness and effectiveness in real-world applications.
+
+```{r}
+
+
+# Function to compute accuracy from confusion matrix
+compute_accuracy <- function(confusion_matrix) {
+  correct_predictions <- sum(diag(confusion_matrix))
+  total_predictions <- sum(confusion_matrix)
+  accuracy <- correct_predictions / total_predictions
+  return(accuracy)
+}
+
+# Define the grid of hyperparameters for tuning
+hyper_grid <- expand.grid(
+  mtry = seq(from = 2, to = sqrt(ncol(train_data) - 1), by = 1),  # Number of variables available for splitting
+  node_size = seq(from = 5, to = 10, by = 5),                        # Minimum size of terminal nodes
+  ntrees = seq(from = 10, to = 100, by = 10)                         # Number of trees in the forest
+)
+
+# Initialize variables to store the best results
+best_kfold_accuracy <- 0 
+best_params <- tibble()
+
+# Define the number of folds for cross-validation
+k_folds <- 5
+
+# Split the data into K folds
+folds <- cut(seq(1, nrow(train_data)), breaks = k_folds, labels = FALSE)
+
+# Iterate through each combination of hyperparameters
+for (row in 1:nrow(hyper_grid)) {
+  # Extract the hyperparameters for the current iteration
+  params <- hyper_grid[row, ]
+  
+  # Perform k-fold cross-validation
+  cv_accuracy <- 0
+  
+  # Iterate through each fold
+  for (fold in 1:k_folds) {
+    # Partition the data into training and validation sets for the current fold
+    index <- folds != fold
+    train <- train_data[index, ]
+    valid <- train_data[!index, ]
+    
+    # Train the random forest model with the current hyperparameters
+    model <- randomForest(Class ~ ., data = train,
+                          mtry = params$mtry,
+                          nodesize = params$node_size, 
+                          ntree = params$ntrees)
+    
+    # Predict on the validation set and compute accuracy
+    predictions <- predict(model, valid) 
+    confusion_matrix <- table(observed = valid$Class, predicted = predictions) 
+    accuracy <- compute_accuracy(confusion_matrix)
+    
+    # Accumulate the accuracy across all folds
+    cv_accuracy <- cv_accuracy + accuracy 
+  }
+  
+  # Compute the mean cross-validated accuracy
+  cv_accuracy <- cv_accuracy / k_folds
+  
+  # Update the best parameters if the current combination yields a higher accuracy
+  if (cv_accuracy > best_kfold_accuracy) { 
+    best_kfold_accuracy <- cv_accuracy 
+    best_params <- params
+  } 
+}
+
+# Print the best parameters and the corresponding k-fold cross-validated accuracy
+print(paste("K-fold CV accuracy:", best_kfold_accuracy))
+print(best_params)
+
+```
+
+After conducting rigorous k-fold cross-validation with a grid search of hyperparameters, the random forest model has been optimized, achieving a k-fold cross-validated accuracy of approximately 73.27%. This accuracy was attained with the following set of hyperparameters: mtry = 3, node_size = 5, and ntrees = 50. Each of these hyperparameters plays a crucial role in shaping the behavior and performance of the random forest algorithm.
+
+*mtry*: This parameter determines the number of variables considered at each split in the decision trees within the forest. A lower value can reduce overfitting by limiting the number of features considered, while a higher value can lead to more diversity among the trees.
+*node_size*: This parameter specifies the minimum number of observations required to create a terminal node in a tree. Setting a larger node size can prevent the trees from becoming too complex and overfitting the training data.
+*ntrees*: This parameter defines the number of trees to be grown in the forest. Increasing the number of trees can improve the model's robustness and stability, but it also comes with a higher computational cost.
+
+Now, armed with this optimized set of hyperparameters, we will proceed to build our refined random forest model. This model, configured with the identified parameters, is expected to exhibit improved performance, offering enhanced accuracy and reliability in predicting the target variable.
+
+
+
+```{r}
+
+# Construct the new random forest model with the parameters found during hyperparameter search
+set.seed(SEED)
+fitted_tuned_forest <- randomForest(Class ~ .,
+                                     data = train_data,
+                                     mtry = 2,
+                                     nodesize = 5,
+                                     ntree = 70)
+
+# Use the fitted random forest model to make predictions
+tuned_forest_predict <- predict(fitted_tuned_forest, test_data)
+
+# Compute the confusion matrix for the model
+tuned_forest_cm <- table(observed = test_data$Class, predicted = tuned_forest_predict)
+
+# Calculate precision, recall, and accuracy for the pruned tree with size 7
+precision_tuned_forest <- tuned_forest_cm[2, 2] / sum(tuned_forest_cm[2, ])
+recall_tuned_forest<- tuned_forest_cm[2, 2] / sum(tuned_forest_cm[, 2])
+accuracy_tuned_forest <- sum(diag(tuned_forest_cm)) / sum(tuned_forest_cm)
+
+
+# Print the metrics
+cat("Confusion Matrix for Tuned Random Forest:\n")
+print(conf_matrix_tree)
+cat(sprintf("Precision of Tuned Forest: %.2f\n",precision_tuned_forest))
+cat(sprintf("Recall of Tuned Forest: %.2f\n", recall_tuned_forest))
+cat(sprintf("Accuracy of Tuned Forest: %.2f\n", accuracy_tuned_forest),"\n")
+
+```
+It's evident that the accuracy of this tuned random forest model surpasses that of the other models. Previously, the best performing models were bagging with an accuracy of 0.707 and random forest with an accuracy of 0.705. Therefore, the tuned random forest model exhibits improved performance compared to the previous models.
+
+```{r}
+# Predict probabilities for AUC calculation
+prob_refined_forest <- predict(fitted_tuned_forest, test_data, type = "prob")[,2]
+
+# Create prediction objects for AUC calculation
+pred_tuned_forest <- prediction(prob_refined_forest, test_data$Class)
+
+# Calculate AUC
+auc_tunded_forest <- performance(pred_tuned_forest, measure = "auc")@y.values[[1]]
+
+
+
+
+
+combined_metrics <- rbind.data.frame(com_metrics, 
+                  cbind(Model = "Refined Decision Tree",Precision=precision_size_7,Recall=recall_size_7,Accuracy=accuracy_size_7,AUC = auc_size_7),
+cbind(Model = "Refined Random Forest",Precision=precision_tuned_forest,Recall=recall_tuned_forest,Accuracy=accuracy_tuned_forest, AUC = auc_tunded_forest))
+
+# Display the combined metrics table
+print(combined_metrics)
+```
+The table above provides an insightful comparison of the refined models, specifically the pruned Decision Tree and the Random Forest with hyperparameter tuning, against their initial counterparts and other models. The enhancements observed underscore the significance of model refinement in the realm of machine learning.
+
+Beginning with the pruned Decision Tree, while the metrics for Accuracy and Precision remain consistent with their initial values, there's a discernible uptick in AUC. This increase signifies a marginal improvement in the model's ability to balance True Positive Rate (Recall) and False Positive Rate, indicating better discriminatory power. Through pruning, the model's complexity has been curtailed, effectively mitigating overfitting and rendering it more adaptable to unseen data.
+
+Conversely, the Random Forest with hyperparameter tuning exhibits substantial advancements across all performance metrics compared to its original iteration. Notably, there's a notable enhancement in Accuracy, indicating a higher frequency of correct predictions in the test dataset. The Precision metric, denoting the proportion of true positive predictions, showcases a significant boost, implying heightened correctness in positive predictions. Furthermore, the AUC demonstrates an improvement, suggesting an enhanced equilibrium between sensitivity and specificity.
+
+Comparing these refined models against their non-refined counterparts, it's evident that the refined Random Forest emerges as the top performer in terms of Accuracy. This underscores its reliability for making predictions on the dataset in question. Despite the improved AUC, the refined Decision Tree lags behind the other models in terms of accuracy.In addition to that, when comparing the performance of various tree-based classifiers, each model exhibits distinct strengths and weaknesses. The basic Decision Tree and its refined version show consistent precision, recall, accuracy, and AUC, indicating that pruning didn't significantly alter their performance. Naive Bayes demonstrates exceptionally high recall but low precision, suggesting it may classify too many instances as positive, potentially leading to more false positives. Among ensemble methods like Bagging, Boosting, and Random Forest, Bagging slightly outperforms others in terms of precision and accuracy. However, the Refined Random Forest stands out with a notable improvement in precision compared to the basic Random Forest. This enhancement suggests that hyperparameter tuning has led to better discrimination between positive and negative classes, resulting in fewer false positives. Overall, while all models have their merits, the Refined Random Forest provides a balanced performance across precision, recall, accuracy, and AUC, making it the preferred choice for practical applications.
+
+In summary, the process of refining models through techniques like pruning and hyperparameter tuning yields tangible benefits, particularly exemplified by the significant enhancements observed in the Random Forest model. These refinements serve to bolster the models' generalizability, predictability, and overall performance, thereby enhancing their utility in real-world applications.
+
+
+
+# 11.Artificial Neural Network Performance Analysis and Comparison
+
+**Feature selection:**
+As we embark on constructing our Artificial Neural Network (ANN) to predict website legitimacy, our strategy revolves around utilizing only the most critical features identified through prior explorations. We have identified 'A01', 'A18', 'A22', and 'A23' as the most influential attributes, which consistently emerge as significant contributors to the classification process. By focusing on these key features, we aim to streamline the model and enhance its predictive accuracy.
+```{r}
+# Initialize important attributes
+important_attributes <- c("A01", "A18", "A22", "A23", "Class")
+```
+
+**Data preparation**:
+To prepare the data for our ANN, we begin by selecting the important attributes identified above. We also include the target variable 'Class' in our feature set to ensure the model has access to the outcome it seeks to predict. Since the categorical attributes lack a natural ordinal relationship, we opt for one-hot encoding to transform them into binary columns. This encoding method preserves the categorical nature of the variables while ensuring a more accurate representation in the model. Additionally, we convert the 'Class' column into a binary format, assigning numerical values to represent the two classes: phishing (1) and legitimate (0).
+
+```{r}
+
+# Apply preprocessing steps:
+# 1. Select only the important attributes from the cleaned dataset.
+# 2. Convert the 'Class' column from a factor to binary format {0, 1}.
+# 3. Perform one-hot encoding for categorical attributes.
+
+# Step 1: Select important attributes and convert 'Class' to numeric.
+PD_ann <- subset(PD_clean, select = important_attributes)
+PD_ann$Class <- as.numeric(as.character(PD_ann$Class))
+
+# Step 2: Perform one-hot encoding for categorical attributes.
+PD_ann <- model.matrix(~ . - 1, data = PD_ann)
+PD_ann <- as.data.frame(PD_ann)
+
+
+```
+
+
+**Perform Train-Split**
+```{r}
+set.seed(SEED) #Student ID as random seed
+train.row = sample(1:nrow(PD_ann),  0.7*nrow(PD_ann)) 
+PD_ann_train = PD_ann[train.row,]
+PD_ann_test = PD_ann[-train.row,]
+```
+
+
+```{r}
+names(PD_ann)
+```
+
+**Construction of the Artificial Neural Network model**
+
+```{r}
+
+# Applying the preprocessing steps mentioned above.
+# Keeping only the important attributes.
+# Convert the Class column from a factor to a column of values {0, 1}.
+PD_ann <- PD_clean %>%
+  select(all_of(important_attributes)) %>%
+  mutate(Class = as.numeric(as.character(Class)))
+
+# Convert the categorical attributes with one-hot encoding.
+PD_ann <- model.matrix(~. - 1, data = PD_ann) %>%
+  as.data.frame()
+
+# Set the seed for reproducibility.
+set.seed(SEED)
+
+# Perform a train-test split with a ratio of 7-3.
+data_split <- initial_split(PD_ann, prop = 0.7)
+
+# Build the training and testing sets.
+PD_ann_train <- training(data_split)
+PD_ann_test <- testing(data_split)
+
+# Construct the model.
+fitted_ann <- neuralnet(
+  Class ~ A01 + A18 + A22 + A23,
+  data = PD_ann_train,
+  hidden = 3,
+  linear.output = FALSE
+)
+
+
+```
+
+**Evaluation of the model**
+
+```{r}
+# Use the fitted ANN to make predictions.
+ann_predictions <- predict(fitted_ann, PD_ann_test)
+
+# Convert predicted probabilities to class labels (binary)
+ann_predicted_classes <- ifelse(ann_predictions > 0.5, 1, 0)
+
+# Compute the confusion matrix for the model.
+ann_cm <- table(observed = PD_ann_test$Class, predicted = ann_predicted_classes)
+
+# Compute precision, recall, and accuracy.
+precision_ann <- ann_cm[2, 2] / sum(ann_cm[2, ])
+recall_ann <- ann_cm[2, 2] / sum(ann_cm[, 2])
+accuracy_ann <- sum(diag(ann_cm)) / sum(ann_cm)
+
+# Function to compute evaluation metrics
+compute_metrics <- function(confusion_matrix) {
+  precision <- confusion_matrix[2, 2] / sum(confusion_matrix[2, ])
+  recall <- confusion_matrix[2, 2] / sum(confusion_matrix[, 2])
+  accuracy <- sum(diag(confusion_matrix)) / sum(confusion_matrix)
+  return(list(precision = precision, recall = recall, accuracy = accuracy))
+}
+
+# Function to generate evaluation report
+evaluation_report <- function(confusion_matrix) {
+  cat("Confusion Matrix for Artificial Neural Network:\n")
+  print(confusion_matrix)
+  cat(sprintf("Precision of ANN: %.2f\n", precision_ann))
+  cat(sprintf("Recall of ANN: %.2f\n", recall_ann))
+  cat(sprintf("Accuracy of ANN: %.2f\n", accuracy_ann), "\n")
+}
+
+# Report the accuracy.
+evaluation_report(ann_cm)
+
+```
+
+
+```{r}
+
+# Compute the predicted probabilities from the fitted ANN model
+ann_scores <- predict(fitted_ann, PD_ann_test)
+
+# Since the output may contain multiple columns, we select the first column for binary classification
+ann_scores <- ann_scores[, 1]
+
+# Compute the AUC of this model
+auc_ann <- auc(roc(as.numeric(PD_ann_test$Class), ann_scores))
+
+# Compile the model metrics to allow for horizontal comparison
+combined_metrics <- rbind(
+  combined_metrics,
+  cbind(Model = "Artificial Neural Network", 
+        Precision = precision_ann, 
+        Recall = recall_ann, 
+        Accuracy = accuracy_ann, 
+        AUC = auc_ann)
+)
+
+# Display the compiled metrics
+combined_metrics
+
+
+
+```
+
+The Artificial Neural Network (ANN) classifier demonstrates competitive performance compared to the other models in the evaluation. It achieves a precision of approximately 74.4%, recall of about 61.5%, accuracy of around 66.3%, and an AUC of approximately 69.5%. 
+
+In comparison to some models like Naive Bayes and Decision Tree, the ANN classifier shows higher precision and accuracy but slightly lower recall. However, it falls short in terms of overall performance compared to models like Bagging, Boosting, and Random Forest, which exhibit higher accuracy and AUC values. 
+
+Several factors could contribute to the ANN classifier's performance relative to other models:
+- Model Complexity: The ANN classifier, being a more complex model, may require more extensive tuning of hyperparameters and architecture to achieve optimal performance. In contrast, ensemble methods like Bagging, Boosting, and Random Forest automatically handle complex relationships in the data, potentially leading to better results.
+- Data Size and Complexity: ANN models typically require large amounts of data to generalize well. If the dataset is relatively small or lacks diversity, the ANN may struggle to learn the underlying patterns effectively, impacting its performance.
+- Hyperparameter Tuning: The ANN classifier's performance could be improved with more extensive hyperparameter tuning, such as adjusting the number of hidden layers, neurons, and training epochs. Fine-tuning these parameters could enhance its ability to capture complex patterns in the data.
+
+Overall, while the ANN classifier demonstrates competitive performance, its effectiveness may depend on factors like dataset size, complexity, and the availability of computational resources for extensive tuning. Depending on the specific problem and resource constraints, other models like Bagging, Boosting, or Random Forest may offer better performance out-of-the-box or with less effort in parameter optimization.
+
+
+# 12.Introducing a New Classifier: Performance Analysis and Evaluation
+
+For this task, I chose to implement the LightGBM classifier, which is a gradient boosting framework developed by Microsoft. LightGBM is widely used for various machine learning tasks, including classification and regression. It is known for its efficiency, speed, and high accuracy.
+
+*LightGBM Classifier*
+**Package**: lightgbm
+**Description**:
+LightGBM is a gradient boosting framework that uses tree-based learning algorithms. It grows trees vertically by choosing the leaf with the maximum delta loss to grow. This approach significantly reduces memory usage and speeds up training. LightGBM also supports distributed and GPU training, making it suitable for large-scale datasets.
+**How it Works**:
+-Gradient Boosting: LightGBM is based on the gradient boosting framework, where trees are grown sequentially to minimize the loss function.
+Leaf-Wise Growth: Unlike traditional depth-wise tree growth, LightGBM grows trees leaf-wise. It selects the leaf with the maximum delta loss to grow, which improves accuracy and reduces computational cost.
+-Histogram-Based Algorithm: LightGBM uses a histogram-based algorithm to bucket continuous feature values into discrete bins. This technique speeds up the training process and reduces memory consumption.
+-Feature Parallelism: LightGBM supports feature parallelism, allowing it to handle large-scale datasets efficiently. It splits data into blocks and parallelizes the computation of histograms for each feature.
+**Performance**:
+LightGBM generally performs well on a wide range of datasets. It is known for its high accuracy, fast training speed, and efficient memory usage. However, its performance may vary depending on the dataset characteristics, hyperparameter settings, and feature engineering.
+
+*Comment on LightGBM Performance*:
+LightGBM often outperforms traditional gradient boosting frameworks like XGBoost due to its leaf-wise tree growth strategy and histogram-based algorithm. It can handle large-scale datasets with millions of samples and features efficiently. However, like any machine learning algorithm, its performance depends on various factors such as hyperparameters tuning, feature selection, and dataset quality. Overall, LightGBM is a powerful tool for classification tasks, offering high accuracy and scalability.
+
+web link to the package details: https://cran.r-project.org/web/packages/lightgbm/index.html
+
+**Data Preparation**
+The training and test data are prepared by excluding the target variable (Class) and converting the remaining data frame to matrix format suitable for LightGBM.
+```{r}
+
+
+# Prepare the training data for LightGBM
+lgb_train <- train_data %>% 
+  select(-Class) %>%  # Exclude the target variable
+  data.matrix()       # Convert data frame to matrix format for LightGBM
+
+# Prepare the test data for LightGBM
+lgb_test <- test_data %>% 
+  select(-Class) %>%  # Exclude the target variable
+  data.matrix()       # Convert data frame to matrix format for LightGBM
+
+```
+
+**Model Fitting** 
+The LightGBM classifier is fitted to the training data using the lightgbm() function from the lightgbm package. Key parameters such as the training data (data), target variable (label), objective function (objective), number of boosting rounds (num_iterations), and verbosity level (verbose) are specified.
+
+```{r}
+
+
+# Set the seed for reproducibility
+set.seed(SEED)
+
+# Fit the LightGBM classifier to the training data
+fitted_lgb <- lightgbm::lightgbm(
+  data = lgb_train,                                       # Training data
+  label = as.numeric(train_data$Class) - 1,              # Target variable (convert to binary labels)
+  objective = "binary",                                  # Objective function for binary classification
+  nrounds = 100,                                         # Number of boosting rounds
+  verbose = 10                                           # Print progress every 10 rounds
+)
+
+
+
+```
+**Evaluation of the model**
+The performance of the LightGBM model is evaluated using a confusion matrix (lgb_cm). The metrics are computed based on the confusion matrix, and an evaluation report is generated to summarize the model's accuracy.
+
+```{r}
+# Make predictions on the test data
+lgb_scores <- predict(fitted_lgb, lgb_test) 
+lgb_predict <- ifelse(lgb_scores > 0.5, 1, 0)
+
+# Compute the confusion matrix for the model
+lgb_cm <- table(observed = test_data$Class, predicted = lgb_predict)
+
+
+# Calculate precision, recall, and accuracy
+precision_lgb <- lgb_cm[2, 2] / sum(lgb_cm[2, ])
+recall_lgb <- lgb_cm[2, 2] / sum(lgb_cm[, 2])
+accuracy_lgb <- sum(diag(lgb_cm)) / sum(lgb_cm)
+
+# Print the metrics
+cat("Performance Metrics for Light Gradient-Boosting Machine:\n")
+print(lgb_cm)
+cat(sprintf("Precision: %.2f\n", precision_lgb))
+cat(sprintf("Recall: %.2f\n", recall_lgb))
+cat(sprintf("Accuracy: %.2f\n", accuracy_lgb), "\n")
+
+```
+
+```{r}
+# Compute AUC
+auc_lgb <- auc(roc(as.numeric(test_data$Class), lgb_predict))
+
+# Compile the model metrics
+combined_metrics <- rbind(
+  combined_metrics,
+  cbind(Model = "Light Gradient Boosting Machine", 
+        Precision = precision_lgb, 
+        Recall = recall_lgb, 
+        Accuracy = accuracy_lgb, 
+        AUC = auc_lgb)
+)
+
+# Display the compiled metrics
+combined_metrics
+```
+The Light Gradient Boosting Machine (LightGBM) model achieved a precision of approximately 61.9%, recall of 67.0%, accuracy of 67.9%, and an AUC of 67.6%. 
+
+Compared to other models in the evaluation:
+
+1. **Precision and Recall**: LightGBM's precision and recall fall within the mid-range among the models evaluated. While its precision is lower than some models like Decision Tree, Bagging, Random Forest, and Artificial Neural Network, its recall is higher than Decision Tree, Naive Bayes, and Refined Decision Tree.
+
+2. **Accuracy**: The accuracy of the LightGBM model is moderate, similar to models like Bagging, Boosting, and Random Forest, but lower than Decision Tree and Refined Random Forest.
+
+3. **AUC (Area Under the ROC Curve)**: The AUC of the LightGBM model indicates its ability to discriminate between positive and negative instances. While it is lower than models like Random Forest and Bagging, it is higher than Naive Bayes and Artificial Neural Network.
+
+When comparing the performance of LightGBM with other models, several key differences and similarities emerge. LightGBM demonstrates a precision of approximately 61.9%, which is similar to the precision of models such as Decision Tree (79.3%), Bagging (75.5%), and Random Forest (71.0%). However, it outperforms Naive Bayes (47.0%) and Refined Random Forest (63.2%) in terms of precision. In terms of recall, LightGBM achieves a score of 67.0%, which is comparable to Boosting (60.5%) and Artificial Neural Network (61.5%), but slightly lower than Refined Random Forest (73.8%). LightGBM's accuracy of 67.9% is consistent with Boosting (69.2%) and Artificial Neural Network (66.3%), but lower than Refined Random Forest (72.4%). However, LightGBM's AUC score of 67.6% is lower than that of Boosting (75.2%), Random Forest (76.4%), and Refined Random Forest (75.6%). Overall, while LightGBM offers competitive performance in terms of precision, recall, and accuracy compared to several models, its AUC score suggests potential areas for improvement to enhance its discriminatory power.
+
+Overall, the LightGBM model performs reasonably well in terms of precision, recall, accuracy, and AUC. It offers a balanced trade-off between precision and recall, making it suitable for classification tasks where both metrics are important. However, further optimization and tuning of hyperparameters may improve its performance further.
+
+*Overall Analysis of all the models*
+
+After analyzing the performance metrics of various models, it's evident that each model has its strengths and weaknesses. The Decision Tree model demonstrates high precision but lacks in recall, whereas Naive Bayes shows exceptionally high recall but suffers from lower precision. Bagging and Random Forest models exhibit balanced performance, with good precision, recall, accuracy, and AUC, making them reliable choices for classification tasks. Boosting also performs well, with balanced precision and recall, contributing to decent accuracy and AUC. The Refined Random Forest model improves upon the Random Forest with higher precision and recall. The Artificial Neural Network (ANN) showcases competitive performance, although it falls slightly short in accuracy compared to ensemble methods like Random Forest. Lastly, the Light Gradient Boosting Machine (LightGBM) exhibits moderate performance across metrics, with lower precision but higher recall compared to some models.
+
+When comparing and contrasting the models, it's essential to consider their trade-offs. While decision trees offer interpretability and simplicity, they may suffer from overfitting. Naive Bayes, despite its simplicity and efficiency, may struggle with complex relationships in the data. Ensemble methods like Bagging, Random Forest, and Boosting address overfitting by aggregating multiple models, leading to improved generalization. The Refined Random Forest enhances the traditional Random Forest by refining the model parameters, resulting in improved precision and recall. Artificial Neural Networks (ANNs) offer flexibility in capturing complex patterns but require extensive computational resources and are prone to overfitting if not appropriately regularized. LightGBM, while efficient and fast, may compromise precision for higher recall.
+
+Among these models, the Refined Random Forest, Decison Tree and the Bagging models stand out as the best performers due to their balanced performance across all metrics, including precision, recall, accuracy, and AUC. They offer a robust and reliable approach to classification tasks, making them suitable choices for a wide range of applications. However, the choice of the best model ultimately depends on the specific requirements of the task and the trade-offs between interpretability, computational efficiency, and the need for high precision or recall.
+
+
